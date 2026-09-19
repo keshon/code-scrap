@@ -24,6 +24,9 @@ func hello(st *state) map[string]any {
 		"precise": st.precise,
 		"stats":   m.Stats,
 		"maxTop":  m.Nodes[0].MaxTop,
+		"view":    m.View,
+		"git":     m.GitTime != 0,
+		"metrics": codemap.Metrics,
 		"text": map[string]any{
 			"font":      st.renderer.Atlas.Font,
 			"colChars":  codemap.ColChars,
@@ -73,6 +76,18 @@ func nodeInfo(st *state, id int32) map[string]any {
 			}
 		}
 		out["classes"] = classes
+		if n.Kind == codemap.KindFile {
+			fm := map[string]any{
+				"functions":     len(f.Scopes),
+				"maxComplexity": f.MaxComplexity,
+			}
+			if m.GitTime != 0 {
+				fm["commits"] = f.Commits
+				fm["authors"] = f.Authors
+				fm["lastChange"] = f.LastChange
+			}
+			out["fileMetrics"] = fm
+		}
 	}
 	if n.Kind == codemap.KindScope {
 		out["line"] = n.StartLine + 1

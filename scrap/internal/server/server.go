@@ -15,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/keshon/code-scrap/scrap/internal/codemap"
+	"github.com/keshon/code-scrap/scrap/internal/gitlog"
 	"github.com/keshon/code-scrap/scrap/internal/tile"
 )
 
@@ -32,8 +33,16 @@ type state struct {
 
 // Server indexes one root at a time and serves it.
 type Server struct {
-	Options codemap.Options
-	Atlas   *tile.Atlas // glyph atlas for GPU text; sets the layout's char aspect
+	Options  codemap.Options
+	Atlas    *tile.Atlas // glyph atlas for GPU text; sets the layout's char aspect
+	GitSince string      // history window for git metrics ("" = all history)
+
+	// What is served = base (latest index) + git metrics + view. Guarded by mu.
+	base    *codemap.Map
+	precise bool
+	git     map[string]codemap.GitStat
+	gitTime int64
+	view    codemap.View
 
 	cur      atomic.Pointer[state]
 	gen      atomic.Uint32
@@ -82,9 +91,13 @@ func (s *Server) Open(root string) error {
 	if err != nil {
 		return err
 	}
-	s.install(m, false)
+	s.mu.Lock()
+	s.git, s.gitTime = nil, 0
+	s.mu.Unlock()
+	s.setBase(m, false)
 	log.Printf("fast index: %d files, %d lines, %d scopes in %d ms", m.Stats.Files, m.Stats.Lines, m.Stats.Scopes, m.Stats.IndexMs)
 
+	go s.readGit(ctx, root)
 	go func() {
 		precise := s.Options
 		precise.Precise = true
@@ -93,7 +106,7 @@ func (s *Server) Open(root string) error {
 		if err != nil || ctx.Err() != nil {
 			return
 		}
-		s.install(pm, true)
+		s.setBase(pm, true)
 		log.Printf("precise index: %d/%d files parsed, %d scopes in %d ms", pm.Stats.PreciseFiles, pm.Stats.Files, pm.Stats.Scopes, pm.Stats.IndexMs)
 	}()
 	return nil
@@ -111,6 +124,61 @@ func (s *Server) progressFn(pass string) codemap.Progress {
 		s.progress.Store(msg)
 		s.broadcast(msg)
 	}
+}
+
+// readGit loads per-file history in the background; git-based metrics light
+// up when it finishes.
+func (s *Server) readGit(ctx context.Context, root string) {
+	t := time.Now()
+	s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 0, "total": 1})
+	stats, err := gitlog.Read(ctx, root, s.GitSince)
+	if err != nil || ctx.Err() != nil {
+		if err != nil {
+			log.Printf("git history unavailable: %v", err)
+		}
+		s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 1, "total": 1})
+		return
+	}
+	g := make(map[string]codemap.GitStat, len(stats))
+	for p, st := range stats {
+		g[p] = codemap.GitStat{Commits: st.Commits, Authors: st.Authors, LastChange: st.LastChange}
+	}
+	s.mu.Lock()
+	s.git, s.gitTime = g, time.Now().Unix()
+	s.mu.Unlock()
+	log.Printf("git history (since %q): %d paths in %d ms", s.GitSince, len(g), time.Since(t).Milliseconds())
+	s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 1, "total": 1})
+	s.rebuild()
+}
+
+func (s *Server) setBase(m *codemap.Map, precise bool) {
+	s.mu.Lock()
+	s.base, s.precise = m, precise
+	s.mu.Unlock()
+	s.rebuild()
+}
+
+// SetView changes how the map is shaped and colored.
+func (s *Server) SetView(v codemap.View) {
+	s.mu.Lock()
+	s.view = v
+	s.mu.Unlock()
+	s.rebuild()
+}
+
+// rebuild derives the served map from base + git + view and installs it.
+func (s *Server) rebuild() {
+	s.mu.Lock()
+	base, precise, git, gitTime, view := s.base, s.precise, s.git, s.gitTime, s.view
+	s.mu.Unlock()
+	if base == nil {
+		return
+	}
+	m := base
+	if git != nil {
+		m = m.WithGit(git, gitTime)
+	}
+	s.install(m.WithView(view), precise)
 }
 
 func (s *Server) install(m *codemap.Map, precise bool) {

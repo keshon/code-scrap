@@ -39,8 +39,11 @@ func content(r Rect) Rect {
 // parent: top = parent top + step. Steps scale with the box, so the city looks
 // the same at every zoom level.
 const (
-	dirStep  = 0.035
-	fileStep = 0.09
+	dirStep    = 0.035 // HeightDepth: a clear terrace per directory level
+	fileStep   = 0.09
+	plinthStep = 0.012 // other modes: thin plinths keep the hierarchy readable
+	flatStep   = 0.03  // HeightFlat buildings, and the floor of metric ones
+	metricStep = 1.4   // metric buildings rise up to this × their shorter side
 )
 
 func (m *Map) layout() {
@@ -53,19 +56,40 @@ func (m *Map) layout() {
 // elevate assigns Top (parents precede children in pre-order) and then
 // MaxTop (children follow parents, so walk backwards).
 func (m *Map) elevate() {
+	mode := m.View.Height
+	if mode == "" {
+		mode = HeightDepth
+	}
+	var pct []float64
+	if mode != HeightDepth && mode != HeightFlat {
+		pct = m.percentiles(Metric(mode))
+	}
 	for i := range m.Nodes {
 		n := &m.Nodes[i]
 		base := 0.0
 		if n.Parent >= 0 {
 			base = m.Nodes[n.Parent].Top
 		}
+		s := n.Rect.Min()
 		switch n.Kind {
 		case KindDir:
 			if i > 0 {
-				n.Top = base + dirStep*n.Rect.Min()
+				if mode == HeightDepth {
+					n.Top = base + dirStep*s
+				} else {
+					n.Top = base + plinthStep*s
+				}
 			}
 		case KindFile:
-			n.Top = base + fileStep*n.Rect.Min()
+			switch {
+			case pct != nil:
+				v := max(pct[n.File], 0)
+				n.Top = base + (flatStep+metricStep*math.Pow(v, 1.5))*s
+			case mode == HeightFlat:
+				n.Top = base + flatStep*s
+			default:
+				n.Top = base + fileStep*s
+			}
 		default:
 			n.Top = base // scopes are drawn on the roof
 		}

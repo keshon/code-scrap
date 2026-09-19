@@ -32,8 +32,32 @@ var (
 	grey    = [3]float32{0.50, 0.52, 0.56}
 )
 
+// heatColor maps 0..1 to a perceptual cold→hot ramp (blue, teal, yellow,
+// orange, red), readable as outlines on a dark background.
+func heatColor(t float32) [3]float32 {
+	stops := [...][3]float32{
+		{0.30, 0.45, 0.85}, {0.25, 0.75, 0.75}, {0.90, 0.85, 0.35}, {0.97, 0.55, 0.25}, {0.95, 0.25, 0.30},
+	}
+	t = min(max(t, 0), 1) * float32(len(stops)-1)
+	i := min(int(t), len(stops)-2)
+	return mix(stops[i], stops[i+1], t-float32(i))
+}
+
 // BoxColor is the outline color of a node; the viewer derives the fill.
 func BoxColor(m *codemap.Map, n *codemap.Node) [4]float32 {
+	if m.View.Color != "" && m.View.Color != codemap.ColorArea {
+		switch {
+		case n.Kind == codemap.KindDir:
+			return [4]float32{0.36, 0.38, 0.44, 1}
+		case n.Heat < 0:
+			return [4]float32{0.30, 0.31, 0.34, 1} // no value: recede
+		}
+		c := heatColor(n.Heat)
+		if n.Kind == codemap.KindScope {
+			c = mix(c, [3]float32{1, 1, 1}, 0.25)
+		}
+		return [4]float32{c[0], c[1], c[2], 1}
+	}
 	c := neutral
 	if n.Hue != codemap.HueNeutral {
 		c = hues[n.Hue%16]

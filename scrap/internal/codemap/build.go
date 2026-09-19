@@ -145,6 +145,7 @@ func Build(root string, opt Options) (*Map, error) {
 	}
 
 	m := assemble(abs, top, files, opt)
+	m.sortByName = opt.SortByName
 	m.charAspect = opt.CharAspect
 	if m.charAspect <= 0 {
 		m.charAspect = DefaultCharAspect
@@ -152,6 +153,7 @@ func Build(root string, opt Options) (*Map, error) {
 	m.Stats.IndexMs = time.Since(t0).Milliseconds()
 	t1 := time.Now()
 	m.layout()
+	m.heat()
 	m.Stats.LayoutMs = time.Since(t1).Milliseconds()
 	return m, nil
 }
@@ -356,7 +358,7 @@ func assemble(abs string, top *tnode, raw []rawFile, opt Options) *Map {
 	var add func(t *tnode, parent int32, depth uint8) int32
 	add = func(t *tnode, parent int32, depth uint8) int32 {
 		id := int32(len(m.Nodes))
-		m.Nodes = append(m.Nodes, Node{Name: t.name, Parent: parent, Depth: depth, File: -1, Weight: t.weight})
+		m.Nodes = append(m.Nodes, Node{Name: t.name, Parent: parent, Depth: depth, File: -1, Weight: t.weight, BaseWeight: t.weight})
 		if !t.isDir() {
 			rf := &raw[t.file]
 			fi := int32(len(m.Files))
@@ -441,6 +443,7 @@ func (m *Map) addScopes(fileNode, fi int32, rf *rawFile, depth uint8) {
 		m.Files[fi].Scopes = append(m.Files[fi].Scopes, id)
 		m.Symbols = append(m.Symbols, Symbol{strings.ToLower(s.Name), s.Name, id, fi, s.Start, s.Kind})
 		m.Stats.Scopes++
+		m.Files[fi].MaxComplexity = max(m.Files[fi].MaxComplexity, s.Complexity)
 		stack = append(stack, id)
 	}
 	for _, id := range stack {

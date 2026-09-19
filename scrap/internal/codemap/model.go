@@ -50,7 +50,9 @@ type Node struct {
 	Top, MaxTop float64
 
 	Lines, Bytes int64
-	Weight       float64
+	Weight       float64 // area budget under the current view
+	BaseWeight   float64 // area budget by size alone (files)
+	Heat         float32 // 0..1 under a metric color view, -1 otherwise
 
 	// scopes only
 	StartLine, EndLine int32 // 0-based, inclusive
@@ -73,6 +75,12 @@ type File struct {
 	Lines   int32
 	Bytes   int64
 	Scopes  []int32 // scope node ids, pre-order
+
+	// metrics
+	MaxComplexity int32 // highest cyclomatic complexity among its functions
+	Commits       int32 // git: commits touching the file
+	Authors       int32 // git: distinct authors
+	LastChange    int64 // git: unix time of the last commit (0 = unknown)
 
 	// Text layout, world units. Lines flow top-to-bottom into Cols columns
 	// of Rows lines each.
@@ -102,8 +110,11 @@ type Map struct {
 	Symbols []Symbol // sorted by Lower, then path, then line
 	World   Rect     // repo bounds in world space
 	Stats   Stats
+	View    View  // how the map is shaped and colored (see WithView)
+	GitTime int64 // when git metrics were read (0 = not loaded)
 
 	charAspect float64
+	sortByName bool
 }
 
 type Stats struct {

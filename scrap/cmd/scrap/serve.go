@@ -14,6 +14,7 @@ func cmdServe(args []string) error {
 	c.register(fs)
 	addr := fs.String("addr", "127.0.0.1:7878", "listen address")
 	fontPath := fs.String("font", "", "code font file (default: Consolas / Cascadia / Menlo / DejaVu Sans Mono, else Go Mono)")
+	gitSince := fs.String("git-since", "12.months", `history window for git metrics ("" = all history)`)
 	parent := fs.Int("parent", 0, "exit when this process id exits (set by the viewer)")
 	fs.Parse(args)
 	if *parent > 0 {
@@ -30,6 +31,7 @@ func cmdServe(args []string) error {
 	if err != nil {
 		return err
 	}
+	s.GitSince = *gitSince
 	errc := make(chan error, 1)
 	go func() { errc <- s.ListenAndServe(*addr) }()
 	if err := s.Open(root); err != nil {

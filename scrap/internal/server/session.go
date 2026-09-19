@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/keshon/code-scrap/scrap/internal/codemap"
 	"github.com/keshon/code-scrap/scrap/internal/tile"
 )
 
@@ -40,22 +41,23 @@ type textKey struct {
 }
 
 type request struct {
-	ID    int64        `json:"id"`
-	Op    string       `json:"op"`
-	Keys  [][3]int     `json:"keys"`
-	Gen   uint32       `json:"gen"`
-	Dim   int          `json:"dim"`
-	Ray   [6]float64   `json:"ray"`   // origin xyz, direction xyz (world units, Y up)
-	Pts   [][2]float64 `json:"pts"`   // ground points for "heights"
-	Texts [][3]int     `json:"texts"` // text blocks: file node, column, segment
-	Node  int32        `json:"node"`
-	X     float64      `json:"x"`
-	Y     float64      `json:"y"`
-	Scale float64      `json:"scale"`
-	Q     string       `json:"q"`
-	Page  int          `json:"page"`
-	Size  int          `json:"size"`
-	Path  string       `json:"path"`
+	ID    int64         `json:"id"`
+	Op    string        `json:"op"`
+	Keys  [][3]int      `json:"keys"`
+	Gen   uint32        `json:"gen"`
+	Dim   int           `json:"dim"`
+	Ray   [6]float64    `json:"ray"`   // origin xyz, direction xyz (world units, Y up)
+	Pts   [][2]float64  `json:"pts"`   // ground points for "heights"
+	Texts [][3]int      `json:"texts"` // text blocks: file node, column, segment
+	View  *codemap.View `json:"view"`  // for "options"
+	Node  int32         `json:"node"`
+	X     float64       `json:"x"`
+	Y     float64       `json:"y"`
+	Scale float64       `json:"scale"`
+	Q     string        `json:"q"`
+	Page  int           `json:"page"`
+	Size  int           `json:"size"`
+	Path  string        `json:"path"`
 }
 
 func (ss *session) run(ctx context.Context) {
@@ -202,6 +204,11 @@ func (ss *session) handle(req request) {
 		if st != nil {
 			resp = pick(st, req.X, req.Y, req.Scale)
 		}
+	case "options":
+		if req.View != nil {
+			go ss.srv.SetView(*req.View)
+		}
+		return
 	case "pickRay":
 		if st != nil {
 			resp = pickRay(st, req.Ray)

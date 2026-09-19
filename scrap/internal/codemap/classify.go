@@ -17,6 +17,7 @@ const (
 	ClassVendored                       // third-party code checked into the repo
 	ClassData                           // config/data formats (json, yaml…)
 	ClassMinified                       // minified or generated: very long lines
+	ClassTest                           // tests, specs, fixtures, snapshots
 )
 
 func (c FileClass) Has(f FileClass) bool { return c&f != 0 }
@@ -84,5 +85,23 @@ func Classify(p string, l *syntax.Lang) FileClass {
 	if l.Data {
 		c |= ClassData
 	}
+	if isTest(p) {
+		c |= ClassTest
+	}
 	return c
+}
+
+var testDirs = []string{"test/", "tests/", "__tests__/", "spec/", "specs/", "e2e/", "testdata/", "fixtures/", "__snapshots__/", "__mocks__/"}
+
+func isTest(p string) bool {
+	lp := "/" + strings.ToLower(p)
+	for _, d := range testDirs {
+		if strings.Contains(lp, "/"+d) {
+			return true
+		}
+	}
+	base := path.Base(lp)
+	stem := strings.TrimSuffix(base, path.Ext(base))
+	return strings.HasSuffix(stem, "_test") || strings.HasSuffix(stem, ".test") || strings.HasSuffix(stem, ".spec") ||
+		strings.HasPrefix(stem, "test_") || strings.HasSuffix(stem, "_spec") || strings.HasSuffix(stem, "tests")
 }

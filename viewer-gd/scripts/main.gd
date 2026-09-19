@@ -10,12 +10,26 @@ extends Control
 ##   --search=<q>      run a search once connected and step to the first hit
 ##   --focus=<substr>  fly to the first search hit's file instead of the line
 ##   --view=3d         switch to the 3D city once connected (--yaw, --pitch, --dist, --wheel=N)
+##   --lens=height:churn,color:complexity,importance   apply lenses once git is loaded
 
 var client: ScrapClient
 var map: MapView
 var city: CityView
 var _v2d: Button
 var _v3d: Button
+var _height_opt: OptionButton
+var _color_opt: OptionButton
+var _importance: CheckButton
+var _legend: Label
+var _syncing_view := false
+
+# lenses: [id, label, needs git]
+const HEIGHTS := [["depth", "Nesting", false], ["flat", "Flat", false], ["lines", "Lines", false],
+	["complexity", "Complexity", false], ["functions", "Functions", false], ["churn", "Churn", true],
+	["age", "Recent change", true], ["authors", "Authors", true]]
+const COLORS := [["area", "Area", false], ["lines", "Lines", false], ["complexity", "Complexity", false],
+	["functions", "Functions", false], ["churn", "Churn", true], ["age", "Recent change", true],
+	["authors", "Authors", true]]
 
 var _status: Label
 var _progress: Label
@@ -105,6 +119,23 @@ func _build_ui() -> void:
 	_v3d = _tool_button("3D", "3D city (Tab toggles): left drag pans, right drag orbits, wheel zooms", func(): set_view(true))
 	_v3d.toggle_mode = true
 	hb.add_child(_v3d)
+	hb.add_child(VSeparator.new())
+	hb.add_child(_small_label("height"))
+	_height_opt = _lens_picker(HEIGHTS, "What building height encodes (3D). Git lenses need history, loaded in the background.")
+	hb.add_child(_height_opt)
+	hb.add_child(_small_label("color"))
+	_color_opt = _lens_picker(COLORS, "What box color encodes: the top-level area, or a metric as a cold (blue) → hot (red) percentile.")
+	hb.add_child(_color_opt)
+	_importance = CheckButton.new()
+	_importance.text = "importance"
+	_importance.tooltip_text = "Shrink vendored, test, generated, asset and data files so the core code gets the space."
+	_importance.focus_mode = Control.FOCUS_NONE
+	_importance.toggled.connect(func(_on): _send_view())
+	hb.add_child(_importance)
+	_legend = Label.new()
+	_legend.modulate = Color(0.7, 0.72, 0.78)
+	_legend.add_theme_font_size_override("font_size", 12)
+	hb.add_child(_legend)
 	hb.add_child(VSeparator.new())
 	_status = Label.new()
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -201,6 +232,56 @@ func _open_folder() -> void:
 	_open_dialog.popup_centered_ratio(0.6)
 
 
+func _small_label(t: String) -> Label:
+	var l := Label.new()
+	l.text = t
+	l.modulate = Color(0.6, 0.63, 0.7)
+	l.add_theme_font_size_override("font_size", 12)
+	return l
+
+
+func _lens_picker(items: Array, tip: String) -> OptionButton:
+	var o := OptionButton.new()
+	o.tooltip_text = tip
+	o.focus_mode = Control.FOCUS_NONE
+	o.flat = true
+	for i in items.size():
+		o.add_item(items[i][1], i)
+	o.item_selected.connect(func(_i): _send_view())
+	return o
+
+
+func _send_view() -> void:
+	if _syncing_view:
+		return
+	var v := {
+		"height": HEIGHTS[_height_opt.selected][0],
+		"color": COLORS[_color_opt.selected][0],
+		"importance": _importance.button_pressed,
+	}
+	client.request("options", {"view": v})
+	_progress.text = "applying view…"
+
+
+## Mirrors the server's view in the controls (no requests while syncing).
+func _sync_view(info: Dictionary) -> void:
+	_syncing_view = true
+	var v: Dictionary = info.get("view", {})
+	var git: bool = info.get("git", false)
+	for i in HEIGHTS.size():
+		_height_opt.set_item_disabled(i, HEIGHTS[i][2] and not git)
+		if HEIGHTS[i][0] == v.get("height", "") or (v.get("height", "") == "" and i == 0):
+			_height_opt.select(i)
+	for i in COLORS.size():
+		_color_opt.set_item_disabled(i, COLORS[i][2] and not git)
+		if COLORS[i][0] == v.get("color", "") or (v.get("color", "") == "" and i == 0):
+			_color_opt.select(i)
+	_importance.button_pressed = v.get("importance", false)
+	var c: String = v.get("color", "")
+	_legend.text = "" if c == "" or c == "area" else "blue = low · red = high " + COLORS[_color_opt.selected][1].to_lower()
+	_syncing_view = false
+
+
 func is_3d() -> bool:
 	return city.visible
 
@@ -277,6 +358,7 @@ func _on_connection(ok: bool) -> void:
 
 func _on_hello(info: Dictionary) -> void:
 	_hello = info
+	_sync_view(info)
 	var s: Dictionary = info.stats
 	var pass_name := "precise" if info.precise else "fast"
 	_progress.text = "%s · %s files · %s lines · %s pass" % [info.name, _num(s.Files), _num(s.Lines), pass_name]
@@ -286,6 +368,10 @@ func _on_hello(info: Dictionary) -> void:
 
 
 func _on_progress(p: Dictionary) -> void:
+	if p.pass == "git":
+		if int(p.done) < int(p.total):
+			_progress.text = "reading git history…"
+		return
 	if int(p.total) > 0 and int(p.done) < int(p.total):
 		_progress.text = "%s %s %d%%" % [p.pass, p.phase, int(100.0 * p.done / p.total)]
 
@@ -346,6 +432,16 @@ func _show_node(n: Dictionary) -> void:
 	if n.has("scope"):
 		t += "[color=#8a93a3]scope[/color]  %s\n" % n.scope
 	t += "\n"
+	if n.has("fileMetrics"):
+		var fm: Dictionary = n.fileMetrics
+		t += "[b]File metrics[/b]\n"
+		t += "functions  %d\nmax complexity  %d\n" % [int(fm.functions), int(fm.maxComplexity)]
+		if fm.has("commits"):
+			var last := "—"
+			if int(fm.lastChange) > 0:
+				last = Time.get_date_string_from_unix_time(int(fm.lastChange))
+			t += "commits  %d\nauthors  %d\nlast change  %s\n" % [int(fm.commits), int(fm.authors), last]
+		t += "\n"
 	if n.has("metrics"):
 		var m: Dictionary = n.metrics
 		t += "[b]Function metrics[/b]\n"
@@ -503,6 +599,27 @@ func _num(v) -> String:
 
 # ---------------------------------------------------------------- automation
 
+## --lens=height:churn,color:complexity,importance  (waits for git history)
+func _apply_lens_when_ready(spec: String) -> void:
+	for i in 100:
+		if _hello.get("git", false):
+			break
+		await get_tree().create_timer(0.1).timeout
+	for part in spec.split(","):
+		var kv := part.split(":")
+		if kv[0] == "importance":
+			_syncing_view = true
+			_importance.button_pressed = true
+			_syncing_view = false
+		for i in HEIGHTS.size():
+			if kv[0] == "height" and HEIGHTS[i][0] == kv[1]:
+				_height_opt.select(i)
+		for i in COLORS.size():
+			if kv[0] == "color" and COLORS[i][0] == kv[1]:
+				_color_opt.select(i)
+	_send_view()
+
+
 func _enter_3d_when_ready() -> void:
 	await get_tree().create_timer(0.8).timeout  # let the 2D camera settle
 	set_view(true)
@@ -540,6 +657,8 @@ func _automate() -> void:
 				_run_search(), CONNECT_ONE_SHOT)
 	if _args.get("view", "") == "3d":
 		client.hello.connect(func(_i): _enter_3d_when_ready(), CONNECT_ONE_SHOT)
+	if _args.has("lens"):
+		_apply_lens_when_ready(_args.lens)
 	await get_tree().create_timer(wait).timeout
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
