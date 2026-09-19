@@ -13,6 +13,10 @@
 uniform sampler2D color_tex : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D glyph_tex : filter_nearest, repeat_disable;
 uniform sampler2D atlas_tex : filter_linear_mipmap_anisotropic, repeat_disable;
+// tunables shared by every text material (Settings → Code text)
+global uniform float scrap_glyph_from;
+global uniform float scrap_glyph_full;
+global uniform float scrap_text_weight;
 uniform float rows = 1.0;
 uniform float col_chars = 100.0;
 uniform float tex_w = 128.0;
@@ -32,7 +36,7 @@ vec4 code_text(vec2 uv) {
 	bar = mix(0.6, bar, smoothstep(1.5, 3.0, line_px));
 	dash *= bar * 0.85;
 
-	float t = smoothstep(4.0, 8.0, line_px);
+	float t = smoothstep(scrap_glyph_from, max(scrap_glyph_full, scrap_glyph_from + 0.01), line_px);
 	vec4 glyph = vec4(0.0);
 	if (t > 0.0 && p.x < col_chars && p.y < rows) {
 		ivec2 cell = ivec2(floor(p));
@@ -45,7 +49,7 @@ vec4 code_text(vec2 uv) {
 			// across cell boundaries
 			float cov = textureGrad(atlas_tex, (cpos + fract(p)) * g, dFdx(p) * g, dFdy(p) * g).r;
 			vec4 c = texelFetch(color_tex, cell, 0);
-			cov = pow(cov, 0.75);  // small text reads thin without a slight boost
+			cov = pow(cov, scrap_text_weight);  // small text reads thin without a slight boost
 			glyph = vec4(c.rgb, 1.0) * cov;
 		}
 	}

@@ -13,9 +13,6 @@ signal selected(node_id: int)
 signal camera_changed
 
 const TILE_PX := 256.0
-const MAX_CACHED := 700
-const LABEL_FONT_SIZE := 12
-const HIT_COLOR := Color(0.86, 0.9, 0.25)
 
 var client: ScrapClient
 
@@ -46,6 +43,7 @@ var _frame := 0
 
 # interaction
 var _dragging := false
+var _drag := {}                    # active mouse binding: {action, click, button}
 var _press_pos := Vector2.ZERO
 var _pressed := false
 var _pick_pending := false
@@ -86,7 +84,12 @@ func _ready() -> void:
 	clip_contents = true
 	focus_mode = Control.FOCUS_CLICK
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	_label_font = load("res://fonts/Go-Medium.ttf")
+	_label_font = Style.font("ui", 500)
+	Style.theme_changed.connect(func():
+		_label_font = Style.font("ui", 500)
+		_overlay.queue_redraw())
+	Settings.changed.connect(func(_id, _v): _dirty = true)
+	Settings.reloaded.connect(func(): _dirty = true)
 
 	_tiles_root = Node2D.new()
 	add_child(_tiles_root)
@@ -190,7 +193,7 @@ func fly_to(tx: float, ty: float, tzoom: float) -> void:
 		f.r0 = log(-b0 + sqrt(b0 * b0 + 1.0))
 		var r1 := log(-b1 + sqrt(b1 * b1 + 1.0))
 		f.S = (r1 - f.r0) / rho
-	f.dur = clamp(f.S * 0.32, 0.35, 1.6)
+	f.dur = clamp(f.S * 0.32, 0.35, 1.6) / float(Settings.get_value("camera.fly_speed"))
 	_fly = f
 	_zoom_target = tzoom
 
@@ -230,7 +233,7 @@ func _process(dt: float) -> void:
 	if not _fly.is_empty():
 		_step_fly(dt)
 	elif abs(log(_zoom_target / zoom)) > 1e-4:
-		zoom = exp(lerp(log(zoom), log(_zoom_target), 1.0 - exp(-dt * 18.0)))
+		zoom = exp(lerp(log(zoom), log(_zoom_target), 1.0 - exp(-dt * float(Settings.get_value("camera.smoothing")))))
 		cx = _anchor_w[0] - (_anchor.x - size.x * 0.5) / zoom
 		cy = _anchor_w[1] - (_anchor.y - size.y * 0.5) / zoom
 		_dirty = true
@@ -261,7 +264,8 @@ func _on_hello(info: Dictionary) -> void:
 func _level_for_zoom() -> int:
 	# +0.9: tiles are shown at 0.54–1.07× their native size, so code text is
 	# almost never magnified
-	return clampi(int(floor(log(zoom / TILE_PX) / log(2.0) + 0.9)), 0, max_z)
+	var px_zoom := zoom * get_window().content_scale_factor  # physical pixels
+	return clampi(int(floor(log(px_zoom / TILE_PX) / log(2.0) + 0.9)), 0, max_z)
 
 
 func _update_tiles() -> void:
@@ -318,7 +322,7 @@ func _update_tiles() -> void:
 			rec.node.position = world_to_screen(key.y * tsz, key.z * tsz)
 			var s := tsz * zoom
 			rec.node.scale = Vector2(s, s)
-	if _tiles.size() > MAX_CACHED:
+	if _tiles.size() > int(Settings.get_value("perf.tile_cache")):
 		_evict()
 	_update_text()
 
@@ -326,6 +330,7 @@ func _update_tiles() -> void:
 ## Text blocks listed by the visible tiles, biggest text first.
 func _update_text() -> void:
 	var view := Rect2(Vector2.ZERO, size).grow(64)
+	var min_px: float = Settings.get_value("text.min_line_px")
 	var seen := {}
 	var wanted := []
 	for key: Vector3i in _tiles:
@@ -338,12 +343,12 @@ func _update_text() -> void:
 				continue
 			seen[k] = true
 			var line_px: float = b.h / b.rows * zoom
-			if line_px < 0.25 or not view.intersects(rect_to_screen([b.x, b.y, b.w, b.h])):
+			if line_px < min_px or not view.intersects(rect_to_screen([b.x, b.y, b.w, b.h])):
 				continue
 			wanted.append([line_px, b])
 	wanted.sort_custom(func(a, b): return a[0] > b[0])
 	var list := []
-	for w in wanted.slice(0, 220):
+	for w in wanted.slice(0, int(Settings.get_value("text.budget"))):
 		list.append(w[1])
 	_text.update(list, func(node: Node2D, b: Dictionary):
 		node.position = world_to_screen(b.x, b.y)
@@ -353,7 +358,7 @@ func _update_text() -> void:
 func _evict() -> void:
 	var recs := _tiles.values()
 	recs.sort_custom(func(a, b): return a.used < b.used)
-	var drop := _tiles.size() - int(MAX_CACHED * 0.8)
+	var drop := _tiles.size() - int(int(Settings.get_value("perf.tile_cache")) * 0.8)
 	for i in drop:
 		var rec: TileRec = recs[i]
 		if rec.node.visible:
@@ -411,52 +416,64 @@ func _on_tile(t: Dictionary) -> void:
 
 # ---------------------------------------------------------------- input
 
+## Mouse input goes through the active keymap (Settings → Mouse & keys):
+## orbit and pan both pan the flat map, dolly zooms, select clicks.
 func _gui_input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton:
 		var mb := ev as InputEventMouseButton
 		if mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
-			var f := 1.25 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.25
-			if mb.factor > 0.0:
-				f = pow(f, mb.factor)
-			_fly = {}
-			_anchor = mb.position
-			_anchor_w = screen_to_world(mb.position)
-			_zoom_target = clamp(_zoom_target * f, min_zoom(), max_zoom())
-			accept_event()
+			if Keymap.wheel_action(mb) == "zoom":
+				var step: float = Settings.get_value("camera.zoom_step")
+				var f := step if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / step
+				if mb.factor > 0.0:
+					f = pow(f, mb.factor)
+				_zoom_at(mb.position, f)
+				accept_event()
 		elif mb.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT]:
 			if mb.pressed:
 				grab_focus()
-				_pressed = true
+				_drag = Keymap.mouse_binding(mb)
+				_drag.button = mb.button_index
 				_dragging = false
 				_press_pos = mb.position
 				if mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT:
 					_focus_hovered()
-			else:
-				if _pressed and not _dragging and mb.button_index == MOUSE_BUTTON_LEFT:
-					_select_hovered()
-				_pressed = false
+			elif _drag.get("button", -1) == mb.button_index:
+				if not _dragging and _drag.get("click", "") == "select":
+					_click_select()
+				_drag = {}
 				_dragging = false
 	elif ev is InputEventMouseMotion:
 		var mm := ev as InputEventMouseMotion
 		_last_mouse = mm.position
-		if _pressed:
+		if not _drag.is_empty() and _drag.has("action"):
 			if not _dragging and mm.position.distance_to(_press_pos) > 4.0:
 				_dragging = true
 			if _dragging:
-				_fly = {}
-				cx -= mm.relative.x / zoom
-				cy -= mm.relative.y / zoom
-				_anchor_w = screen_to_world(_anchor)
-				_dirty = true
+				match _drag.action:
+					"pan", "orbit":
+						_fly = {}
+						cx -= mm.relative.x / zoom
+						cy -= mm.relative.y / zoom
+						_zoom_target = zoom
+						_anchor_w = screen_to_world(_anchor)
+						_dirty = true
+					"dolly":
+						_zoom_at(_press_pos, exp(-mm.relative.y * 0.01))
 		_schedule_pick()
 	elif ev is InputEventMagnifyGesture:
-		_anchor = ev.position
-		_anchor_w = screen_to_world(ev.position)
-		_zoom_target = clamp(_zoom_target * ev.factor, min_zoom(), max_zoom())
+		_zoom_at(ev.position, ev.factor)
 	elif ev is InputEventPanGesture:
 		cx += ev.delta.x * 20.0 / zoom
 		cy += ev.delta.y * 20.0 / zoom
 		_dirty = true
+
+
+func _zoom_at(p: Vector2, f: float) -> void:
+	_fly = {}
+	_anchor = p
+	_anchor_w = screen_to_world(p)
+	_zoom_target = clamp(_zoom_target * f, min_zoom(), max_zoom())
 
 
 func _schedule_pick() -> void:
@@ -479,10 +496,29 @@ func _on_reply(_id: int, data: Dictionary) -> void:
 		_overlay.queue_redraw()
 
 
-func _select_hovered() -> void:
+## A click selects what is under the cursor; a click on empty space
+## deselects.
+func _click_select() -> void:
 	if hover.is_empty() or int(hover.get("node", -1)) < 0:
+		deselect()
 		return
 	select_node(int(hover.node), hover.rect)
+
+
+func deselect() -> void:
+	if selection_id < 0 and selection_rect.is_empty():
+		return
+	selection_id = -1
+	selection_rect = []
+	current_hit = []
+	selected.emit(-1)
+	_overlay.queue_redraw()
+
+
+func frame_selected() -> void:
+	if selection_rect.size() == 4:
+		var t := fit_rect(selection_rect)
+		fly_to(t[0], t[1], t[2])
 
 
 func select_node(id: int, rect: Array) -> void:
@@ -511,6 +547,9 @@ func focus_line(r: Array, line_px := 16.0) -> void:
 func _draw_overlay() -> void:
 	var o := _overlay
 	var view := Rect2(Vector2.ZERO, size)
+	var HIT_COLOR: Color = Settings.get_value("highlight.search")
+	var hover_c: Color = Settings.get_value("highlight.hover")
+	var sel_c: Color = Settings.get_value("highlight.selection")
 	# search: files with hits, then hit lines
 	for r in hit_files:
 		var s := rect_to_screen(r)
@@ -538,14 +577,14 @@ func _draw_overlay() -> void:
 	# hover + selection
 	if hover.has("rect") and int(hover.get("node", -1)) >= 0:
 		var hr := rect_to_screen(hover.rect)
-		o.draw_rect(hr, Color(0.55, 0.75, 1.0, 0.06))
-		o.draw_rect(hr, Color(0.55, 0.75, 1.0, 0.7), false, 1.0)
+		o.draw_rect(hr, Color(hover_c, 0.06))
+		o.draw_rect(hr, Color(hover_c, 0.7), false, 1.0)
 		if hover.has("lineRect"):
-			o.draw_rect(rect_to_screen(hover.lineRect), Color(0.55, 0.75, 1.0, 0.12))
+			o.draw_rect(rect_to_screen(hover.lineRect), Color(hover_c, 0.12))
 	if selection_rect.size() == 4:
 		var sr := rect_to_screen(selection_rect)
-		o.draw_rect(sr, Color(0.3, 0.55, 1.0, 0.16))
-		o.draw_rect(sr, Color(0.35, 0.62, 1.0), false, 2.0)
+		o.draw_rect(sr, Color(sel_c, 0.16))
+		o.draw_rect(sr, sel_c, false, 2.0)
 
 
 func _draw_labels() -> void:
@@ -553,6 +592,10 @@ func _draw_labels() -> void:
 	var seen := {}
 	var cand := []
 	var view := Rect2(Vector2.ZERO, size)
+	var LABEL_FONT_SIZE: int = Settings.get_value("labels.font_size")
+	var min_box: float = Settings.get_value("labels.min_box_px")
+	var pill_c := Color(Style.color("bg"), 0.86)
+	var text_c := Style.color("text")
 	for key: Vector3i in _tiles:
 		var rec: TileRec = _tiles[key]
 		if not rec.node.visible:
@@ -568,14 +611,14 @@ func _draw_labels() -> void:
 			if kind == 2:
 				if r.size.y < 7.0 or r.size.x < 30.0:
 					continue
-			elif r.size.x < 34.0:
+			elif r.size.x < min_box:
 				continue
 			if not view.intersects(r):
 				continue
 			cand.append([r.size.x, r, rec.label_texts[i], kind])
 	cand.sort_custom(func(a, b): return a[0] > b[0])
 	var placed: Array[Rect2] = []
-	var budget := 450
+	var budget: int = Settings.get_value("labels.max")
 	for c in cand:
 		if budget <= 0:
 			break
@@ -603,8 +646,8 @@ func _draw_labels() -> void:
 			continue
 		placed.append(pill)
 		budget -= 1
-		o.draw_rect(pill, Color(0.07, 0.075, 0.09, 0.88))
-		o.draw_string(_label_font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.93, 0.94, 0.96))
+		o.draw_rect(pill, pill_c)
+		o.draw_string(_label_font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_c)
 
 
 # ---------------------------------------------------------------- relations
@@ -619,7 +662,9 @@ func _draw_arcs() -> void:
 		return
 	var o := _overlay
 	var view := Rect2(Vector2.ZERO, size).grow(200)
-	var alpha: float = clamp(60.0 / arcs.size(), 0.18, 0.8)
+	var top_a: float = Settings.get_value("relations.opacity")
+	var alpha: float = clamp(60.0 / arcs.size(), top_a * 0.2, top_a)
+	var width: float = Settings.get_value("relations.width")
 	for arc in arcs:
 		var a := rect_to_screen(arc.a).get_center()
 		var b := rect_to_screen(arc.b).get_center()
@@ -636,7 +681,7 @@ func _draw_arcs() -> void:
 			var t := i / 20.0
 			pts.append(a.lerp(ctrl, t).lerp(ctrl.lerp(b, t), t))
 		var c: Color = arc.color
-		o.draw_polyline(pts, Color(c, alpha), 1.4, true)
+		o.draw_polyline(pts, Color(c, alpha), width, true)
 		# arrowhead at the imported/called end
 		var tip := pts[20]
 		var back := tip - pts[17]

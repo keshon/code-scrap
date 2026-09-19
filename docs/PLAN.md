@@ -1,6 +1,6 @@
 # Polish plan
 
-Status: proposed · 2026-09-19 · baseline commit `d18af10`
+Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1 done, theme A (Calm) first
 
 This plan turns the prototype into a tool: a data-driven core, a real UI shell, and a viewport that reads well. It covers the 20 review points from 2026-09-19. The phases are ordered so that each one builds on the previous: first the foundations everything else plugs into, then fixes, then the shell, then viewport polish.
 
@@ -18,6 +18,8 @@ This plan turns the prototype into a tool: a data-driven core, a real UI shell, 
 ## Phase 1 — Foundations (data-driven core)
 
 Everything later hangs off these, so they come first.
+
+> **Done (2026-09-19).** Autoloads `Settings`, `Keymap` and `Style` (`viewer-gd/scripts/core/`), a generated settings panel (`scripts/ui/settings_panel.gd`), Maya and Classic keymaps, Calm and FUI theme tokens, IBM Plex fonts, UI scale with a physical-resolution 3D viewport, text tunables as shader globals, and server `options` for importance weights and the git window. Still to come: in-panel key rebinding (edit keymap JSON for now), server layout constants (terrace steps, padding), and "Reset group".
 
 ### 1.1 Settings system (points 12, 13, 17)
 - `config/settings.schema.json` holds every parameter: `id`, group, type (bool / int / float / enum / color / px / key-binding), default, range, label, description, and the scope it applies to (`viewer` | `server` | `both`).

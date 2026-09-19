@@ -50,14 +50,17 @@ type request struct {
 	Pts   [][2]float64  `json:"pts"`   // ground points for "heights"
 	Texts [][3]int      `json:"texts"` // text blocks: file node, column, segment
 	View  *codemap.View `json:"view"`  // for "options"
-	Node  int32         `json:"node"`
-	X     float64       `json:"x"`
-	Y     float64       `json:"y"`
-	Scale float64       `json:"scale"`
-	Q     string        `json:"q"`
-	Page  int           `json:"page"`
-	Size  int           `json:"size"`
-	Path  string        `json:"path"`
+	// also for "options": viewer settings that shape the served map
+	Weights  map[string]float64 `json:"weights"`
+	GitSince *string            `json:"gitSince"`
+	Node     int32              `json:"node"`
+	X        float64            `json:"x"`
+	Y        float64            `json:"y"`
+	Scale    float64            `json:"scale"`
+	Q        string             `json:"q"`
+	Page     int                `json:"page"`
+	Size     int                `json:"size"`
+	Path     string             `json:"path"`
 }
 
 func (ss *session) run(ctx context.Context) {
@@ -207,6 +210,12 @@ func (ss *session) handle(req request) {
 	case "options":
 		if req.View != nil {
 			go ss.srv.SetView(*req.View)
+		}
+		if req.Weights != nil {
+			go ss.srv.SetWeights(req.Weights)
+		}
+		if req.GitSince != nil {
+			ss.srv.SetGitSince(*req.GitSince)
 		}
 		return
 	case "edges", "calls":

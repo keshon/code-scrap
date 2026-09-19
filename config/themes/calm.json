@@ -1,0 +1,14 @@
+{
+  "name": "Calm",
+  "desc": "Layered, rounded, floating panels; soft depth; sentence case.",
+  "font": {"ui": "plex-sans", "mono": "plex-mono", "size": 13, "size_small": 12, "size_title": 15},
+  "color": {
+    "bg": "#111214", "surface1": "#1b1c20", "surface2": "#22242a", "surface3": "#2a2d34", "raised": "#3a3e48",
+    "border": "#ffffff0f", "text": "#e8e9ec", "text2": "#a2a6b0", "text3": "#72767f",
+    "accent": "#8fa8ff", "on_accent": "#0e1220", "good": "#5fd38a", "warn": "#e8b04b", "bad": "#e5534b"
+  },
+  "shape": {"radius": 12, "radius_control": 8, "border_width": 0, "gap": 10, "padding": 12, "control_height": 30},
+  "depth": {"shadow_size": 14, "shadow_color": "#00000066"},
+  "type": {"label_case": "none", "label_tracking": 0},
+  "decor": {"corner_brackets": false, "grid_bg": false}
+}

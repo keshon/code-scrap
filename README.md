@@ -48,18 +48,29 @@ scrap/bin/scrap.exe serve -addr 127.0.0.1:7878 D:/path/to/some/repo
 
 ### Viewer controls
 
-| Input | Action |
+Mouse and keys come from a keymap (`config/keymaps/*.json`, picked in **Settings → Mouse & keys**). The default is Maya-like:
+
+| Input (Maya keymap) | Action |
 |---|---|
 | Wheel / pinch | zoom toward the cursor (3D: toward the roof or wall under it) |
-| Drag | pan · 3D: right drag or Shift+drag orbits |
-| Click | select → Inspector |
+| `Alt`+LMB drag | orbit (3D) · pan (2D) |
+| MMB drag · `Alt`+MMB drag | pan |
+| `Alt`+RMB drag | dolly / drag-zoom |
+| Click | select → Inspector · click on empty space deselects |
 | Double-click | fly to the box under the cursor |
+| `F` / `A` | frame the selection / frame all |
+| `Q` | deselect |
 | `Tab` / **2D**·**3D** | switch between the flat map and the 3D city |
-| `/` | search symbols (prefix); **Enter** / **Shift+Enter** step through hits |
-| `Home` | fit the whole repo |
-| `F` | fit the selection |
+| `/` or `Ctrl+K` | search symbols (prefix); **Enter** / **Shift+Enter** step through hits |
 | `Backspace` | select and fly to the parent |
-| `Esc` | clear search |
+| `Esc` | close settings / clear search |
+| `Ctrl+,` | settings |
+
+The *Classic* keymap keeps the old scheme: left drag pans, right drag orbits, `Home` frames all.
+
+### Settings and presets
+
+Every tunable (UI scale and theme, camera, labels, code text, highlight and arc colors, budgets, importance weights, git window) is described in `config/settings.schema.json`; the settings panel is generated from it. Changes apply live and are saved to the Godot user folder. **Presets** (`config/presets/*.json`, plus your own via *Save as…*) load whole sets of values. Themes are token files in `config/themes/`.
 
 ### Lenses (toolbar)
 
@@ -73,7 +84,7 @@ Every lens is optional; the defaults show the plain map.
 | **imports** | arcs from the selection to what it imports (orange) and from what imports it (blue) |
 | **calls** | arcs to what the selected function/file calls (violet) and from its callers (green); syntax-level, ambiguous names skipped |
 
-Git lenses read `git log` for the last 12 months in the background (`scrap serve -git-since` changes the window).
+Git lenses read `git log` for the last 12 months in the background (**Settings → History**, or `scrap serve -git-since`, changes the window). Importance weights per file class are in **Settings → Importance weights**.
 
 ### CLI
 

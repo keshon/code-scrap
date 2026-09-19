@@ -1,0 +1,25 @@
+{
+  "name": "Maya",
+  "desc": "Alt + mouse buttons navigate: left orbits, middle pans, right dollies. Plain left click selects.",
+  "mouse": [
+    {"action": "orbit", "button": "left", "mods": ["alt"]},
+    {"action": "pan", "button": "middle", "mods": ["alt"]},
+    {"action": "dolly", "button": "right", "mods": ["alt"]},
+    {"action": "pan", "button": "middle", "mods": []},
+    {"action": "select", "button": "left", "mods": []}
+  ],
+  "wheel": [
+    {"action": "zoom", "mods": []}
+  ],
+  "keys": [
+    {"action": "frame_selected", "key": "F"},
+    {"action": "frame_all", "key": "A"},
+    {"action": "deselect", "key": "Q"},
+    {"action": "select_parent", "key": "Backspace"},
+    {"action": "toggle_view", "key": "Tab"},
+    {"action": "search", "key": "Slash"},
+    {"action": "search", "key": "K", "mods": ["ctrl"]},
+    {"action": "clear", "key": "Escape"},
+    {"action": "settings", "key": "Comma", "mods": ["ctrl"]}
+  ]
+}

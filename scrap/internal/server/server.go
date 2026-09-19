@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"sync"
@@ -50,7 +51,9 @@ type Server struct {
 	sessions map[*session]bool
 	root     string
 	indexing context.CancelFunc
-	progress atomic.Value // last progress message (map[string]any)
+	indexCtx context.Context    // lives as long as the current root
+	gitStop  context.CancelFunc // cancels the running git read
+	progress atomic.Value       // last progress message (map[string]any)
 }
 
 // New creates a server; call Open to index a root. fontPath selects the
@@ -81,6 +84,7 @@ func (s *Server) Open(root string) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.indexing = cancel
+	s.indexCtx = ctx
 	s.root = root
 	s.mu.Unlock()
 
@@ -97,7 +101,7 @@ func (s *Server) Open(root string) error {
 	s.setBase(m, false)
 	log.Printf("fast index: %d files, %d lines, %d scopes in %d ms", m.Stats.Files, m.Stats.Lines, m.Stats.Scopes, m.Stats.IndexMs)
 
-	go s.readGit(ctx, root)
+	s.startGit()
 	go func() {
 		precise := s.Options
 		precise.Precise = true
@@ -126,12 +130,50 @@ func (s *Server) progressFn(pass string) codemap.Progress {
 	}
 }
 
+// startGit (re)starts reading history for the current root, cancelling a
+// read in flight.
+func (s *Server) startGit() {
+	s.mu.Lock()
+	if s.gitStop != nil {
+		s.gitStop()
+	}
+	ctx, stop := context.WithCancel(s.indexCtx)
+	s.gitStop = stop
+	root, since := s.root, s.GitSince
+	s.mu.Unlock()
+	go s.readGit(ctx, root, since)
+}
+
+// SetGitSince changes the history window and re-reads git when it differs.
+func (s *Server) SetGitSince(since string) {
+	s.mu.Lock()
+	same := since == s.GitSince
+	s.GitSince = since
+	open := s.indexCtx != nil
+	s.mu.Unlock()
+	if !same && open {
+		s.startGit()
+	}
+}
+
+// SetWeights changes the importance factors (by class name).
+func (s *Server) SetWeights(w map[string]float64) {
+	s.mu.Lock()
+	changed := !maps.Equal(w, s.view.Weights)
+	s.view.Weights = w
+	importance := s.view.Importance
+	s.mu.Unlock()
+	if changed && importance {
+		s.rebuild()
+	}
+}
+
 // readGit loads per-file history in the background; git-based metrics light
 // up when it finishes.
-func (s *Server) readGit(ctx context.Context, root string) {
+func (s *Server) readGit(ctx context.Context, root, since string) {
 	t := time.Now()
 	s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 0, "total": 1})
-	stats, err := gitlog.Read(ctx, root, s.GitSince)
+	stats, err := gitlog.Read(ctx, root, since)
 	if err != nil || ctx.Err() != nil {
 		if err != nil {
 			log.Printf("git history unavailable: %v", err)
@@ -146,7 +188,7 @@ func (s *Server) readGit(ctx context.Context, root string) {
 	s.mu.Lock()
 	s.git, s.gitTime = g, time.Now().Unix()
 	s.mu.Unlock()
-	log.Printf("git history (since %q): %d paths in %d ms", s.GitSince, len(g), time.Since(t).Milliseconds())
+	log.Printf("git history (since %q): %d paths in %d ms", since, len(g), time.Since(t).Milliseconds())
 	s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 1, "total": 1})
 	s.rebuild()
 }
@@ -161,6 +203,9 @@ func (s *Server) setBase(m *codemap.Map, precise bool) {
 // SetView changes how the map is shaped and colored.
 func (s *Server) SetView(v codemap.View) {
 	s.mu.Lock()
+	if v.Weights == nil {
+		v.Weights = s.view.Weights // weights come from settings, not the lens pickers
+	}
 	s.view = v
 	s.mu.Unlock()
 	s.rebuild()

@@ -12,6 +12,10 @@ type View struct {
 	Height     string `json:"height"`     // HeightDepth (default), HeightFlat, or a Metric
 	Color      string `json:"color"`      // ColorArea (default) or a Metric
 	Importance bool   `json:"importance"` // shrink vendored, test, generated, asset and data files
+
+	// Weights overrides importance factors by class name (see ImportanceClasses);
+	// classes it leaves out keep their default.
+	Weights map[string]float64 `json:"weights,omitempty"`
 }
 
 // Height modes besides the metrics.
@@ -36,20 +40,28 @@ const (
 // Metrics lists the metrics in UI order.
 var Metrics = []Metric{MetricLines, MetricComplexity, MetricFunctions, MetricChurn, MetricAge, MetricAuthors}
 
-// Importance factors: how much area a file class keeps when weighting by
-// importance. The core code keeps 1.
-var importance = []struct {
-	class  FileClass
-	factor float64
+// ImportanceClasses are the default importance factors: how much area a
+// file class keeps when weighting by importance. The core code keeps 1.
+var ImportanceClasses = []struct {
+	Name   string
+	Class  FileClass
+	Factor float64
 }{
-	{ClassMinified, 0.08}, {ClassAsset, 0.1}, {ClassVendored, 0.12}, {ClassData, 0.3}, {ClassTest, 0.35},
+	{"minified", ClassMinified, 0.08}, {"asset", ClassAsset, 0.1}, {"vendored", ClassVendored, 0.12},
+	{"data", ClassData, 0.3}, {"test", ClassTest, 0.35},
 }
 
-func importanceFactor(c FileClass) float64 {
+// importanceFactor is the smallest factor among the file's classes; weights
+// override the defaults by class name.
+func importanceFactor(c FileClass, weights map[string]float64) float64 {
 	f := 1.0
-	for _, i := range importance {
-		if c.Has(i.class) {
-			f = min(f, i.factor)
+	for _, i := range ImportanceClasses {
+		if c.Has(i.Class) {
+			w, ok := weights[i.Name]
+			if !ok {
+				w = i.Factor
+			}
+			f = min(f, max(w, 0.001))
 		}
 	}
 	return f
@@ -139,7 +151,7 @@ func (m *Map) reweigh() {
 		case KindFile:
 			n.Weight = n.BaseWeight
 			if m.View.Importance {
-				n.Weight *= importanceFactor(m.Files[n.File].Class)
+				n.Weight *= importanceFactor(m.Files[n.File].Class, m.View.Weights)
 			}
 		case KindDir:
 			n.Weight = 0

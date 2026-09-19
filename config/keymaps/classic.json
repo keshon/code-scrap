@@ -1,0 +1,25 @@
+{
+  "name": "Classic",
+  "desc": "No modifiers: left drag pans, right drag orbits (3D), click selects. Friendly to trackpads and maps.",
+  "mouse": [
+    {"action": "pan", "button": "left", "mods": [], "click": "select"},
+    {"action": "orbit", "button": "right", "mods": []},
+    {"action": "orbit", "button": "left", "mods": ["shift"]},
+    {"action": "pan", "button": "middle", "mods": []}
+  ],
+  "wheel": [
+    {"action": "zoom", "mods": []}
+  ],
+  "keys": [
+    {"action": "frame_selected", "key": "F"},
+    {"action": "frame_all", "key": "Home"},
+    {"action": "frame_all", "key": "A"},
+    {"action": "deselect", "key": "Q"},
+    {"action": "select_parent", "key": "Backspace"},
+    {"action": "toggle_view", "key": "Tab"},
+    {"action": "search", "key": "Slash"},
+    {"action": "search", "key": "K", "mods": ["ctrl"]},
+    {"action": "clear", "key": "Escape"},
+    {"action": "settings", "key": "Comma", "mods": ["ctrl"]}
+  ]
+}

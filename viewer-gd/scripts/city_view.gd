@@ -13,11 +13,6 @@ signal exited(cx: float, cy: float, zoom: float)
 
 const S := 1000.0            # render units per world unit
 const TILE_PX := 256.0
-const MAX_TILES := 420
-const MAX_CACHED := 600
-const FOV := 50.0
-const LABEL_FONT_SIZE := 12
-const HIT_COLOR := Color(0.86, 0.9, 0.25)
 const MIN_PITCH := 0.12
 const MAX_PITCH := 1.56
 
@@ -62,8 +57,10 @@ var _arcs_mesh: MeshInstance3D
 var _arcs_origin := []
 var arcs := []
 
-var _pressed := -1
+var _drag := {}              # active mouse binding: {action, click, button}
 var _dragging := false
+var _f := 1.0                # physical pixels per UI pixel (UI scale)
+var _fov := 50.0
 var _press_pos := Vector2.ZERO
 var _last_mouse := Vector2.ZERO
 var _pick_pending := false
@@ -95,12 +92,15 @@ func _ready() -> void:
 	clip_contents = true
 	focus_mode = Control.FOCUS_CLICK
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	_label_font = load("res://fonts/Go-Medium.ttf")
+	_label_font = Style.font("ui", 500)
 	_shader = load("res://shaders/city.gdshader")
+	_fov = Settings.get_value("camera.fov")
 
+	# the 3D view renders at physical resolution: the container is f times
+	# the control's size and scaled back down by 1/f, so a UI scale above 1
+	# does not upscale (blur) the city
 	_vpc = SubViewportContainer.new()
 	_vpc.stretch = true
-	_vpc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_vpc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_vpc)
 	_vp = SubViewport.new()
@@ -112,7 +112,7 @@ func _ready() -> void:
 	_vp.add_child(_root3d)
 
 	_cam = Camera3D.new()
-	_cam.fov = FOV
+	_cam.fov = _fov
 	_root3d.add_child(_cam)
 	_env = Environment.new()
 	_env.background_mode = Environment.BG_COLOR
@@ -136,8 +136,9 @@ func _ready() -> void:
 	_cube = _make_cube()
 	_plane = _make_plane()
 	_sel_fill = _highlight("res://shaders/highlight_fill.gdshader", {})
-	_sel_xray = _highlight("res://shaders/highlight_xray.gdshader", {"color": Color(0.4, 0.7, 1.0, 1.0), "width_px": 2.0, "face_alpha": 0.04})
-	_hov_xray = _highlight("res://shaders/highlight_xray.gdshader", {"color": Color(0.6, 0.8, 1.0, 0.55), "width_px": 1.0, "face_alpha": 0.0})
+	_sel_xray = _highlight("res://shaders/highlight_xray.gdshader", {"width_px": 2.0, "face_alpha": 0.04})
+	_hov_xray = _highlight("res://shaders/highlight_xray.gdshader", {"width_px": 1.0, "face_alpha": 0.0})
+	_apply_settings()
 	var im := ImmediateMesh.new()
 	_arcs_mesh = MeshInstance3D.new()
 	_arcs_mesh.mesh = im
@@ -150,7 +151,52 @@ func _ready() -> void:
 	_arcs_mesh.material_override = am
 	_arcs_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_root3d.add_child(_arcs_mesh)
-	resized.connect(func(): _dirty = true)
+	resized.connect(_fit_viewport)
+	get_window().size_changed.connect(_fit_viewport)
+	_fit_viewport()
+	Settings.changed.connect(func(_id, _v): _apply_settings())
+	Settings.reloaded.connect(_apply_settings)
+	Style.theme_changed.connect(_apply_theme)
+	_apply_theme()
+
+
+func _apply_theme() -> void:
+	_label_font = Style.font("ui", 500)
+	_env.background_color = Style.color("bg")
+	_env.fog_light_color = Style.color("bg")
+	_overlay.queue_redraw()
+
+
+func _fit_viewport() -> void:
+	_f = get_window().content_scale_factor
+	_vpc.scale = Vector2.ONE / _f
+	_vpc.position = Vector2.ZERO
+	_vpc.size = size * _f
+	_dirty = true
+
+
+## Re-reads the settings this view uses; cheap, so any change calls it.
+func _apply_settings() -> void:
+	_fov = Settings.get_value("camera.fov")
+	_cam.fov = _fov
+	var sel: Color = Settings.get_value("highlight.selection")
+	var hov: Color = Settings.get_value("highlight.hover")
+	(_sel_xray.material_override as ShaderMaterial).set_shader_parameter("color", sel)
+	(_hov_xray.material_override as ShaderMaterial).set_shader_parameter("color", Color(hov, 0.55))
+	_arcs_origin = []  # rebuild arcs with the current opacity
+	_dirty = true
+	if _overlay:
+		_overlay.queue_redraw()
+
+
+## Screen point (UI pixels) → viewport pixels, for camera rays.
+func _vp_pt(p: Vector2) -> Vector2:
+	return p * _f
+
+
+## Render-space point → screen point in UI pixels.
+func _unproject(p: Vector3) -> Vector2:
+	return _cam.unproject_position(p) / _f
 
 
 func set_arcs(list: Array) -> void:
@@ -168,7 +214,8 @@ func _update_arcs() -> void:
 	im.clear_surfaces()
 	if arcs.is_empty():
 		return
-	var alpha: float = clamp(60.0 / arcs.size(), 0.2, 0.85)
+	var top_a: float = Settings.get_value("relations.opacity")
+	var alpha: float = clamp(60.0 / arcs.size(), top_a * 0.25, top_a)
 	im.surface_begin(Mesh.PRIMITIVE_LINES)
 	for arc in arcs:
 		var ra: Array = arc.a
@@ -273,12 +320,14 @@ func _make_cube() -> ArrayMesh:
 # ---------------------------------------------------------------- camera
 
 func _ppu(d: float) -> float:
-	## pixels per world unit at distance d (world units) from the camera
-	return size.y / (2.0 * d * tan(deg_to_rad(FOV) * 0.5))
+	## physical pixels per world unit at distance d (world units) from the
+	## camera: tile and text detail follow the real resolution
+	return size.y * _f / (2.0 * d * tan(deg_to_rad(_fov) * 0.5))
 
 
+## Camera distance showing zoom UI pixels per world unit (as the 2D map).
 func _dist_for_zoom(zoom: float) -> float:
-	return size.y / (2.0 * zoom * tan(deg_to_rad(FOV) * 0.5))
+	return size.y / (2.0 * zoom * tan(deg_to_rad(_fov) * 0.5))
 
 
 ## Enter from the 2D map: start straight above the same view, then tilt.
@@ -308,13 +357,22 @@ func home() -> void:
 	_fly_rect(r, 0.0)
 
 
+func frame_selected() -> void:
+	if not selection.is_empty():
+		focus_rect(selection.rect, selection.top)
+
+
+func _fly_dur(base: float) -> float:
+	return base / float(Settings.get_value("camera.fly_speed"))
+
+
 func _fly_rect(r: Array, top: float, margin := 1.25) -> void:
 	var w: float = max(r[2], r[3] * size.x / max(size.y, 1.0)) * margin
 	var d := _dist_for_zoom(size.x / w)
 	_goal = {}
 	_tween = {"from": {"tx": tx, "ty": ty, "th": th, "dist": dist, "pitch": pitch, "yaw": yaw},
 		"to": {"tx": r[0] + r[2] * 0.5, "ty": r[1] + r[3] * 0.5, "th": top, "dist": d, "pitch": pitch, "yaw": yaw},
-		"t": 0.0, "dur": 0.9, "arc": true}
+		"t": 0.0, "dur": _fly_dur(0.9), "arc": true}
 
 
 func focus_rect(r: Array, top: float) -> void:
@@ -328,7 +386,7 @@ func focus_line(r: Array, top: float, line_px := 16.0) -> void:
 	_goal = {}
 	_tween = {"from": {"tx": tx, "ty": ty, "th": th, "dist": dist, "pitch": pitch, "yaw": yaw},
 		"to": {"tx": r[0] + r[2] * 0.5, "ty": r[1] + r[3] * 0.5, "th": top, "dist": d, "pitch": max(pitch, 1.15), "yaw": yaw},
-		"t": 0.0, "dur": 1.1, "arc": true}
+		"t": 0.0, "dur": _fly_dur(1.1), "arc": true}
 
 
 func _step(dt: float) -> void:
@@ -350,10 +408,10 @@ func _step(dt: float) -> void:
 		if tw.t >= 1.0:
 			_tween = {}
 			if tw.get("exit", false):
-				exited.emit(tx, ty, size.y / (2.0 * dist * tan(deg_to_rad(FOV) * 0.5)))
+				exited.emit(tx, ty, size.y / (2.0 * dist * tan(deg_to_rad(_fov) * 0.5)))
 		_dirty = true
 	elif not _goal.is_empty():
-		var k := 1.0 - exp(-dt * 16.0)
+		var k := 1.0 - exp(-dt * float(Settings.get_value("camera.smoothing")))
 		var done := true
 		for key in _goal:
 			var cur: float = get(key)
@@ -430,7 +488,7 @@ func _follow_floor(dt: float) -> void:
 		_heights_at = now
 		var cam_w := [_cam.global_position.x / S + _origin[0], _cam.global_position.z / S + _origin[1]]
 		_heights_req = client.request("heights", {"pts": [cam_w, [tx, ty]]})
-	if _tween.is_empty() and _pressed < 0 and abs(th - _floor_target) > dist * 1e-4:
+	if _tween.is_empty() and _drag.is_empty() and abs(th - _floor_target) > dist * 1e-4:
 		th = lerp(th, _floor_target, 1.0 - exp(-dt * 8.0))
 		_dirty = true
 
@@ -460,6 +518,7 @@ func _update_tiles() -> void:
 	var wy0: float = world[1]
 	var wx1: float = world[0] + world[2]
 	var wy1: float = world[1] + world[3]
+	var max_tiles: int = Settings.get_value("perf.tiles_3d")
 	while not queue.is_empty():
 		var best := 0
 		for i in queue.size():
@@ -479,7 +538,7 @@ func _update_tiles() -> void:
 		var closest := Vector3(clamp(cam_pos.x, a.x, b.x), clamp(cam_pos.y, a.y, b.y), clamp(cam_pos.z, a.z, b.z))
 		var d: float = max(cam_pos.distance_to(closest) / S, 1e-12)
 		var px := ts * _ppu(d)
-		if px > TILE_PX * 1.15 and k.x < max_z and chosen.size() + queue.size() + 4 <= MAX_TILES:
+		if px > TILE_PX * 1.15 and k.x < max_z and chosen.size() + queue.size() + 4 <= max_tiles:
 			for j in 2:
 				for i in 2:
 					queue.append([px * 0.5, Vector3i(k.x + 1, k.y * 2 + i, k.z * 2 + j)])
@@ -523,10 +582,11 @@ func _update_tiles() -> void:
 	_update_text(cam_pos)
 	_update_highlights()
 	_update_arcs()
-	if _tiles.size() > MAX_CACHED:
+	var max_cached: int = Settings.get_value("perf.tile_cache")
+	if _tiles.size() > max_cached:
 		var recs := _tiles.values()
 		recs.sort_custom(func(p, q): return p.used < q.used)
-		for i in _tiles.size() - int(MAX_CACHED * 0.8):
+		for i in _tiles.size() - int(max_cached * 0.8):
 			var rec: Rec = recs[i]
 			if not rec.node.visible:
 				rec.node.queue_free()
@@ -535,6 +595,7 @@ func _update_tiles() -> void:
 
 ## Text blocks listed by the visible tiles, biggest text on screen first.
 func _update_text(cam_pos: Vector3) -> void:
+	var min_px: float = Settings.get_value("text.min_line_px")
 	var seen := {}
 	var wanted := []
 	for key: Vector3i in _tiles:
@@ -551,11 +612,11 @@ func _update_text(cam_pos: Vector3) -> void:
 				clamp(cam_pos.z, c.z - b.h * S * 0.5, c.z + b.h * S * 0.5))
 			var d: float = max(cam_pos.distance_to(near) / S, 1e-12)
 			var line_px: float = b.h / b.rows * _ppu(d)
-			if line_px >= 0.25:
+			if line_px >= min_px:
 				wanted.append([line_px, b])
 	wanted.sort_custom(func(a, b): return a[0] > b[0])
 	var list := []
-	for w in wanted.slice(0, 220):
+	for w in wanted.slice(0, int(Settings.get_value("text.budget"))):
 		list.append(w[1])
 	_text.update(list, func(node: Node3D, b: Dictionary):
 		node.position = _world_to_render(b.x, b.top, b.y)
@@ -655,8 +716,8 @@ func _ground_point(p: Vector2, h := NAN) -> Array:
 	## plane at height h (default: the target's height), or [] if it doesn't
 	if is_nan(h):
 		h = th
-	var o := _cam.project_ray_origin(p)
-	var n := _cam.project_ray_normal(p)
+	var o := _cam.project_ray_origin(_vp_pt(p))
+	var n := _cam.project_ray_normal(_vp_pt(p))
 	if n.y > -1e-6:
 		return []
 	var t := (h * S - o.y) / n.y
@@ -664,66 +725,97 @@ func _ground_point(p: Vector2, h := NAN) -> Array:
 	return [hit.x / S + _origin[0], hit.z / S + _origin[1]]
 
 
+## Mouse input goes through the active keymap (Settings → Mouse & keys).
 func _gui_input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton:
 		var mb := ev as InputEventMouseButton
 		if mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
-			var f := 1.0 / 1.25 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.25
-			if mb.factor > 0.0:
-				f = pow(f, mb.factor)
-			_tween = {}
-			# the point to zoom toward: the roof/wall under the cursor if the
-			# last pick is fresh, else the plane at the target's height
-			var p := []
-			if hover.has("hit") and _last_mouse.distance_to(mb.position) < 3.0:
-				p = hover.hit
-			else:
-				var gp := _ground_point(mb.position)
-				if not gp.is_empty():
-					p = [gp[0], th, gp[1]]
-			var d0 := _goal_get("dist")
-			var d1: float = clamp(d0 * f, 1e-9, 20.0)
-			_goal_set("dist", d1)
-			if not p.is_empty():
-				var k := d1 / d0
-				_goal_set("tx", p[0] + (_goal_get("tx") - p[0]) * k)
-				_goal_set("th", p[1] + (_goal_get("th") - p[1]) * k)
-				_goal_set("ty", p[2] + (_goal_get("ty") - p[2]) * k)
-			accept_event()
+			if Keymap.wheel_action(mb) == "zoom":
+				var step: float = Settings.get_value("camera.zoom_step")
+				var f := 1.0 / step if mb.button_index == MOUSE_BUTTON_WHEEL_UP else step
+				if mb.factor > 0.0:
+					f = pow(f, mb.factor)
+				_zoom_toward(mb.position, f)
+				accept_event()
 		elif mb.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT]:
 			if mb.pressed:
 				grab_focus()
-				_pressed = mb.button_index
+				_drag = Keymap.mouse_binding(mb)
+				_drag.button = mb.button_index
 				_dragging = false
 				_press_pos = mb.position
 				if mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT and hover.has("rect"):
 					focus_rect(hover.rect, float(hover.get("top", 0.0)))
-			else:
-				if _pressed == MOUSE_BUTTON_LEFT and not _dragging and hover.has("rect"):
-					select(int(hover.node), hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
-				_pressed = -1
+			elif _drag.get("button", -1) == mb.button_index:
+				if not _dragging and _drag.get("click", "") == "select":
+					_click_select()
+				_drag = {}
 				_dragging = false
 	elif ev is InputEventMouseMotion:
 		var mm := ev as InputEventMouseMotion
 		var prev := _last_mouse
 		_last_mouse = mm.position
-		if _pressed >= 0:
+		if _drag.has("action"):
 			if not _dragging and mm.position.distance_to(_press_pos) > 4.0:
 				_dragging = true
 			if _dragging:
 				_tween = {}
 				_goal = {}
-				if _pressed == MOUSE_BUTTON_LEFT and not mm.shift_pressed:
-					var a := _ground_point(prev)
-					var b := _ground_point(mm.position)
-					if not a.is_empty() and not b.is_empty():
-						tx -= b[0] - a[0]
-						ty -= b[1] - a[1]
-				else:
-					yaw -= mm.relative.x * 0.006
-					pitch = clamp(pitch + mm.relative.y * 0.005, MIN_PITCH, MAX_PITCH)
+				match _drag.action:
+					"pan":
+						var a := _ground_point(prev)
+						var b := _ground_point(mm.position)
+						if not a.is_empty() and not b.is_empty():
+							tx -= b[0] - a[0]
+							ty -= b[1] - a[1]
+					"orbit":
+						var s: float = Settings.get_value("camera.orbit_speed")
+						yaw -= mm.relative.x * 0.006 * s
+						pitch = clamp(pitch + mm.relative.y * 0.005 * s, MIN_PITCH, MAX_PITCH)
+					"dolly":
+						dist = clamp(dist * exp(mm.relative.y * 0.01), 1e-9, 20.0)
 				_dirty = true
 		_schedule_pick()
+
+
+## Wheel zoom toward the roof/wall under the cursor if the last pick is
+## fresh, else toward the plane at the target's height.
+func _zoom_toward(pos: Vector2, f: float) -> void:
+	_tween = {}
+	var p := []
+	if hover.has("hit") and _last_mouse.distance_to(pos) < 3.0:
+		p = hover.hit
+	else:
+		var gp := _ground_point(pos)
+		if not gp.is_empty():
+			p = [gp[0], th, gp[1]]
+	var d0 := _goal_get("dist")
+	var d1: float = clamp(d0 * f, 1e-9, 20.0)
+	_goal_set("dist", d1)
+	if not p.is_empty():
+		var k := d1 / d0
+		_goal_set("tx", p[0] + (_goal_get("tx") - p[0]) * k)
+		_goal_set("th", p[1] + (_goal_get("th") - p[1]) * k)
+		_goal_set("ty", p[2] + (_goal_get("ty") - p[2]) * k)
+
+
+## A click selects what is under the cursor; a click on empty space
+## deselects.
+func _click_select() -> void:
+	if hover.has("rect") and int(hover.get("node", -1)) >= 0:
+		select(int(hover.node), hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
+	else:
+		deselect()
+
+
+func deselect() -> void:
+	if selection.is_empty():
+		return
+	selection = {}
+	current_hit = {}
+	selected.emit(-1)
+	_update_highlights()
+	_overlay.queue_redraw()
 
 
 func _schedule_pick() -> void:
@@ -735,8 +827,8 @@ func _schedule_pick() -> void:
 func _send_pick() -> void:
 	if client == null or gen < 0:
 		return
-	var o := _cam.project_ray_origin(_last_mouse)
-	var n := _cam.project_ray_normal(_last_mouse)
+	var o := _cam.project_ray_origin(_vp_pt(_last_mouse))
+	var n := _cam.project_ray_normal(_vp_pt(_last_mouse))
 	var ray := [o.x / S + _origin[0], o.y / S, o.z / S + _origin[1], n.x, n.y, n.z]
 	_hover_ray = ray
 	client.request("pickRay", {"ray": ray})
@@ -779,12 +871,13 @@ func _project_roof(r: Array, top: float) -> PackedVector2Array:
 		var p := _world_to_render(r[0] + r[2] * c[0], top, r[1] + r[3] * c[1])
 		if _cam.is_position_behind(p):
 			return PackedVector2Array()
-		pts.append(_cam.unproject_position(p))
+		pts.append(_unproject(p))
 	return pts
 
 
 func _draw_overlay() -> void:
 	var o := _overlay
+	var HIT_COLOR: Color = Settings.get_value("highlight.search")
 	for f in hit_files:
 		var pts := _project_roof(f, f[4] if f.size() > 4 else 0.0)
 		if pts.size() == 4:
@@ -807,6 +900,7 @@ func _draw_labels() -> void:
 	var seen := {}
 	var cand := []
 	var view := Rect2(Vector2.ZERO, size)
+	var min_box: float = Settings.get_value("labels.min_box_px")
 	for key: Vector3i in _tiles:
 		var rec: Rec = _tiles[key]
 		if not rec.node.visible:
@@ -821,20 +915,22 @@ func _draw_labels() -> void:
 			var p1 := _world_to_render(rec.label_data[j] + rec.label_data[j + 2], rec.label_data[j + 4], rec.label_data[j + 1])
 			if _cam.is_position_behind(p0) or _cam.is_position_behind(p1):
 				continue
-			var s0 := _cam.unproject_position(p0)
-			var s1 := _cam.unproject_position(p1)
+			var s0 := _unproject(p0)
+			var s1 := _unproject(p1)
 			var w := s0.distance_to(s1)
-			if w < 40.0 or not view.has_point(s0):
+			if w < min_box or not view.has_point(s0):
 				continue
 			cand.append([w, s0, rec.label_texts[i], _cam.global_position.distance_to(p0)])
 	cand.sort_custom(func(a, b): return a[0] > b[0])
 	var placed: Array[Rect2] = []
-	var budget := 350
+	var budget: int = Settings.get_value("labels.max")
+	var fs: int = Settings.get_value("labels.font_size")
+	var pill_c := Color(Style.color("bg"), 0.86)
+	var text_c := Style.color("text")
 	for c in cand:
 		if budget <= 0:
 			break
 		var text: String = c[2]
-		var fs := LABEL_FONT_SIZE
 		var tw := _label_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var max_w: float = c[0] - 8.0
 		if tw > max_w:
@@ -854,8 +950,8 @@ func _draw_labels() -> void:
 			continue
 		placed.append(pill)
 		budget -= 1
-		o.draw_rect(pill, Color(0.07, 0.075, 0.09, 0.85))
-		o.draw_string(_label_font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.93, 0.94, 0.96))
+		o.draw_rect(pill, pill_c)
+		o.draw_string(_label_font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_c)
 
 
 func set_search_results(files: Array) -> void:

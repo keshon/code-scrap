@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "about": "Every tunable parameter of code-scrap. Viewers generate their settings panel from this file; presets override defaults by id. scope: viewer = applied by the viewer, server = sent to scrap via the options op.",
+  "groups": [
+    {
+      "id": "ui",
+      "label": "Interface",
+      "settings": [
+        {"id": "ui.theme", "type": "enum", "options_from": "themes", "default": "calm", "label": "Theme", "desc": "Look of panels and controls. Themes live in config/themes."},
+        {"id": "ui.scale_auto", "type": "bool", "default": true, "label": "Scale with display", "desc": "Follow the operating system's display scale (DPI)."},
+        {"id": "ui.scale", "type": "float", "default": 1.0, "min": 0.75, "max": 2.5, "step": 0.05, "label": "Interface scale", "desc": "Size of all panels, controls and text. Multiplies the display scale when scaling with the display."},
+        {"id": "ui.keymap", "type": "enum", "options_from": "keymaps", "default": "maya", "label": "Mouse & keys", "desc": "Navigation and shortcut scheme. Keymaps live in config/keymaps."}
+      ]
+    },
+    {
+      "id": "camera",
+      "label": "Camera",
+      "settings": [
+        {"id": "camera.zoom_step", "type": "float", "default": 1.25, "min": 1.05, "max": 2.0, "step": 0.01, "label": "Wheel zoom step", "desc": "Zoom factor per wheel notch."},
+        {"id": "camera.smoothing", "type": "float", "default": 16.0, "min": 4.0, "max": 40.0, "step": 1.0, "label": "Zoom smoothing", "desc": "How fast the camera catches up with wheel zoom. Higher = snappier."},
+        {"id": "camera.fly_speed", "type": "float", "default": 1.0, "min": 0.25, "max": 3.0, "step": 0.05, "label": "Fly speed", "desc": "Speed of animated flights (search hits, framing, home)."},
+        {"id": "camera.orbit_speed", "type": "float", "default": 1.0, "min": 0.2, "max": 3.0, "step": 0.05, "label": "Orbit speed", "desc": "3D rotation per pixel of mouse drag."},
+        {"id": "camera.fov", "type": "float", "default": 50.0, "min": 20.0, "max": 90.0, "step": 1.0, "label": "Field of view", "desc": "Vertical field of view of the 3D camera, in degrees."},
+        {"id": "camera.fly_to_search", "type": "bool", "default": true, "label": "Fly to search results", "desc": "Selecting a search result moves the camera to it. Off keeps the camera where it is."}
+      ]
+    },
+    {
+      "id": "labels",
+      "label": "Labels",
+      "settings": [
+        {"id": "labels.font_size", "type": "int", "default": 12, "min": 8, "max": 24, "step": 1, "label": "Label size", "desc": "Font size of directory, file and scope labels in the viewport (before interface scale)."},
+        {"id": "labels.max", "type": "int", "default": 450, "min": 50, "max": 1500, "step": 10, "label": "Label budget", "desc": "Most labels drawn at once; bigger boxes win."},
+        {"id": "labels.min_box_px", "type": "int", "default": 34, "min": 10, "max": 200, "step": 2, "label": "Smallest labelled box", "desc": "Boxes narrower than this on screen get no label."}
+      ]
+    },
+    {
+      "id": "text",
+      "label": "Code text",
+      "settings": [
+        {"id": "text.budget", "type": "int", "default": 220, "min": 40, "max": 800, "step": 10, "label": "Text blocks on screen", "desc": "Most text blocks (file columns) drawn at once; the biggest on screen win."},
+        {"id": "text.min_line_px", "type": "float", "default": 0.25, "min": 0.1, "max": 4.0, "step": 0.05, "label": "Show text from", "desc": "Line height on screen (px) at which a file starts showing its line texture."},
+        {"id": "text.glyph_from_px", "type": "float", "default": 4.0, "min": 2.0, "max": 16.0, "step": 0.5, "label": "Letters appear at", "desc": "Line height (px) where dashes begin turning into letters."},
+        {"id": "text.glyph_full_px", "type": "float", "default": 8.0, "min": 3.0, "max": 24.0, "step": 0.5, "label": "Letters complete at", "desc": "Line height (px) where letters are fully shown."},
+        {"id": "text.weight", "type": "float", "default": 0.75, "min": 0.4, "max": 1.2, "step": 0.05, "label": "Letter weight", "desc": "Glyph coverage curve: lower = bolder small text."}
+      ]
+    },
+    {
+      "id": "highlight",
+      "label": "Highlights",
+      "settings": [
+        {"id": "highlight.selection", "type": "color", "default": "#5a8cff", "label": "Selection", "desc": "Outline and tint of the selected box."},
+        {"id": "highlight.hover", "type": "color", "default": "#8cbfff", "label": "Hover", "desc": "Outline of the box under the cursor."},
+        {"id": "highlight.search", "type": "color", "default": "#dbe640", "label": "Search hits", "desc": "Files and lines matching the current search."}
+      ]
+    },
+    {
+      "id": "relations",
+      "label": "Relations",
+      "settings": [
+        {"id": "relations.imports_out", "type": "color", "default": "#ff9e40", "label": "Imports", "desc": "Arcs from the selection to what it imports."},
+        {"id": "relations.imports_in", "type": "color", "default": "#59d1ff", "label": "Imported by", "desc": "Arcs from files that import the selection."},
+        {"id": "relations.calls_out", "type": "color", "default": "#cc80ff", "label": "Calls", "desc": "Arcs from the selection to what it calls."},
+        {"id": "relations.calls_in", "type": "color", "default": "#8cf273", "label": "Called by", "desc": "Arcs from callers of the selection."},
+        {"id": "relations.opacity", "type": "float", "default": 0.8, "min": 0.05, "max": 1.0, "step": 0.05, "label": "Arc opacity", "desc": "Strongest arc opacity; many arcs fade toward a fifth of it."},
+        {"id": "relations.width", "type": "float", "default": 1.4, "min": 0.5, "max": 5.0, "step": 0.1, "label": "Arc width (2D)", "desc": "Arc line width in pixels on the flat map."}
+      ]
+    },
+    {
+      "id": "performance",
+      "label": "Performance",
+      "settings": [
+        {"id": "perf.tiles_3d", "type": "int", "default": 420, "min": 60, "max": 1200, "step": 10, "label": "3D tile budget", "desc": "Most map tiles drawn at once in the 3D city."},
+        {"id": "perf.tile_cache", "type": "int", "default": 700, "min": 100, "max": 3000, "step": 50, "label": "Tile cache", "desc": "Tiles kept in memory after they leave the view."}
+      ]
+    },
+    {
+      "id": "importance",
+      "label": "Importance weights",
+      "settings": [
+        {"id": "importance.vendored", "type": "float", "default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "scope": "server", "label": "Vendored", "desc": "Area kept by third-party code checked into the repo (vendor/, third_party/, *.min.js …) when Importance is on."},
+        {"id": "importance.test", "type": "float", "default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01, "scope": "server", "label": "Tests", "desc": "Area kept by tests, specs, fixtures and snapshots."},
+        {"id": "importance.minified", "type": "float", "default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01, "scope": "server", "label": "Generated / minified", "desc": "Area kept by files with very long lines."},
+        {"id": "importance.asset", "type": "float", "default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "scope": "server", "label": "Assets", "desc": "Area kept by images, fonts, media, archives, source maps and lockfiles."},
+        {"id": "importance.data", "type": "float", "default": 0.3, "min": 0.0, "max": 1.0, "step": 0.01, "scope": "server", "label": "Data / config", "desc": "Area kept by JSON, YAML, TOML and similar files."}
+      ]
+    },
+    {
+      "id": "history",
+      "label": "History",
+      "settings": [
+        {"id": "git.since", "type": "string", "default": "12.months", "scope": "server", "label": "Git history window", "desc": "How far back git lenses look (git date syntax: 12.months, 2.years, 2025-01-01). Empty = whole history, which can take minutes on big repositories."}
+      ]
+    }
+  ]
+}

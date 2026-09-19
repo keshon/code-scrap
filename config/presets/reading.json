@@ -1,0 +1,11 @@
+{
+  "name": "Reading",
+  "desc": "Bigger labels and earlier, bolder letters for reading code on roofs.",
+  "values": {
+    "labels.font_size": 14,
+    "text.glyph_from_px": 3.0,
+    "text.glyph_full_px": 6.0,
+    "text.weight": 0.65,
+    "camera.fly_speed": 0.8
+  }
+}
