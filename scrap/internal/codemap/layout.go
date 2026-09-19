@@ -1,0 +1,107 @@
+package codemap
+
+import (
+	"math"
+
+	"github.com/keshon/code-scrap/scrap/internal/treemap"
+)
+
+// Layout constants, relative to a box's shorter side.
+const (
+	padFrac    = 0.004 // inner padding
+	headerFrac = 0.020 // label strip on top of dirs and files
+	charAspect = 0.6   // monospace glyph width / line height
+	colGap     = 3     // chars between text columns
+
+	// WorldAspect is the repo rectangle's height/width inside the unit square.
+	WorldAspect = 0.625
+)
+
+// Header returns the label strip of a dir or file box.
+func Header(r Rect) Rect {
+	m := r.Min()
+	p := m * padFrac
+	return rect(r.X+p, r.Y+p, r.W-2*p, m*headerFrac)
+}
+
+// content returns the area below the header where children or text go.
+func content(r Rect) Rect {
+	m := r.Min()
+	p := m * padFrac
+	h := m * headerFrac
+	return rect(r.X+p, r.Y+p+h, r.W-2*p, max(r.H-2*p-h, 0))
+}
+
+func (m *Map) layout() {
+	m.World = rect(0, 0, 1, WorldAspect)
+	m.Nodes[0].Rect = m.World
+	m.layoutNode(0)
+}
+
+func (m *Map) layoutNode(id int32) {
+	n := &m.Nodes[id]
+	switch n.Kind {
+	case KindDir:
+		inner := content(n.Rect)
+		ws := make([]float64, len(n.Children))
+		for i, c := range n.Children {
+			ws[i] = m.Nodes[c].Weight
+		}
+		rects := treemap.Squarify(ws, inner)
+		for i, c := range n.Children {
+			m.Nodes[c].Rect = rects[i]
+			m.layoutNode(c)
+		}
+	case KindFile:
+		m.layoutText(&m.Files[n.File], content(n.Rect))
+		f := &m.Files[n.File]
+		for _, sid := range f.Scopes {
+			s := &m.Nodes[sid]
+			depthInFile := float64(s.Depth - n.Depth - 1)
+			segs := f.Segments(s.StartLine, s.EndLine, depthInFile*0.5*f.CW)
+			if len(segs) > 0 {
+				s.Rect = bounds(segs)
+			}
+		}
+	}
+}
+
+// layoutText flows a file's lines into columns so the text block matches the
+// box's aspect ratio as closely as possible, maximizing line height.
+func (m *Map) layoutText(f *File, r Rect) {
+	f.Cols, f.Rows = 0, 0
+	if f.Class.Has(ClassBinary) || f.Lines <= 0 || r.W <= 0 || r.H <= 0 {
+		return
+	}
+	n := int(f.Lines)
+	bestK, bestLH := 1, 0.0
+	// Line height for k columns: lh = min(W / (k*C + (k-1)*gap)*aspect, H / ceil(n/k)).
+	// It is unimodal in k, so scan around the continuous optimum.
+	kOpt := math.Sqrt(r.W * float64(n) / (r.H * charAspect * (ColChars + colGap)))
+	lo := max(1, int(kOpt)-3)
+	hi := min(n, int(kOpt)+3)
+	for k := lo; k <= hi; k++ {
+		rows := (n + k - 1) / k
+		lh := min(r.W/(float64(k*ColChars+(k-1)*colGap)*charAspect), r.H/float64(rows))
+		if lh > bestLH {
+			bestK, bestLH = k, lh
+		}
+	}
+	rows := (n + bestK - 1) / bestK
+	f.Rows = int32(rows)
+	f.Cols = int32((n + rows - 1) / rows)
+	f.LH = bestLH
+	f.CW = bestLH * charAspect
+	f.Stride = float64(ColChars+colGap) * f.CW
+	f.TX, f.TY = r.X, r.Y
+}
+
+func bounds(rs []Rect) Rect {
+	x0, y0 := math.Inf(1), math.Inf(1)
+	x1, y1 := math.Inf(-1), math.Inf(-1)
+	for _, r := range rs {
+		x0, y0 = min(x0, r.X), min(y0, r.Y)
+		x1, y1 = max(x1, r.X+r.W), max(y1, r.Y+r.H)
+	}
+	return rect(x0, y0, x1-x0, y1-y0)
+}

@@ -1,0 +1,6 @@
+scrap/bin/
+*.exe
+.godot/
+*.import
+.scrap/
+viewer-gd/export/
