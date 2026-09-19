@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/binary"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/keshon/code-scrap/scrap/internal/codemap"
@@ -120,6 +121,37 @@ func pick(st *state, x, y, scale float64) map[string]any {
 		}
 	}
 	return out
+}
+
+// relations answers "what does this node import, and who imports it"
+// (op "edges") or "what does it call, and who calls it" (op "calls"), plus
+// the geometry of every endpoint so the viewer can draw arcs directly.
+func relations(st *state, op string, id int32) map[string]any {
+	m := st.m
+	var out, in []codemap.Edge
+	var outTotal, inTotal int
+	if op == "calls" {
+		out, in, outTotal, inTotal = m.CallsOf(id, 2000)
+	} else {
+		out, in, outTotal, inTotal = m.DepsOf(id, 2000)
+	}
+	nodes := map[string][5]float64{}
+	pair := func(es []codemap.Edge) [][2]int32 {
+		res := make([][2]int32, len(es))
+		for i, e := range es {
+			res[i] = [2]int32{e.From, e.To}
+			for _, n := range [2]int32{e.From, e.To} {
+				r := m.Nodes[n].Rect
+				nodes[strconv.Itoa(int(n))] = [5]float64{r.X, r.Y, r.W, r.H, m.Nodes[n].Top}
+			}
+		}
+		return res
+	}
+	return map[string]any{
+		"op": op, "node": id,
+		"out": pair(out), "in": pair(in), "outTotal": outTotal, "inTotal": inTotal,
+		"nodes": nodes,
+	}
 }
 
 func pickRay(st *state, r [6]float64) map[string]any {

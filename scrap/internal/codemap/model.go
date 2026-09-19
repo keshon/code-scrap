@@ -59,6 +59,7 @@ type Node struct {
 	Complexity         int32
 	Params             int32
 	MaxNesting         int32
+	Calls              []string // distinct names called inside (syntax-level)
 }
 
 // ColChars is the width of one text column inside a file box, in characters.
@@ -81,6 +82,8 @@ type File struct {
 	Commits       int32 // git: commits touching the file
 	Authors       int32 // git: distinct authors
 	LastChange    int64 // git: unix time of the last commit (0 = unknown)
+
+	raw int32 // index of the file in the build's input list
 
 	// Text layout, world units. Lines flow top-to-bottom into Cols columns
 	// of Rows lines each.
@@ -110,8 +113,10 @@ type Map struct {
 	Symbols []Symbol // sorted by Lower, then path, then line
 	World   Rect     // repo bounds in world space
 	Stats   Stats
-	View    View  // how the map is shaped and colored (see WithView)
-	GitTime int64 // when git metrics were read (0 = not loaded)
+	View    View               // how the map is shaped and colored (see WithView)
+	Deps    *Deps              // file dependency graph (shared by every view of the map)
+	Callers map[string][]int32 // callee name → scopes calling it
+	GitTime int64              // when git metrics were read (0 = not loaded)
 
 	charAspect float64
 	sortByName bool
@@ -120,6 +125,7 @@ type Map struct {
 type Stats struct {
 	Dirs, Files, Scopes, Symbols int
 	PreciseFiles                 int
+	Imports                      int // resolved import edges
 	Lines, Bytes                 int64
 	IndexMs, LayoutMs            int64
 }

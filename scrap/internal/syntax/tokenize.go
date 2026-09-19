@@ -36,6 +36,13 @@ type Brace struct {
 type Scan struct {
 	Braces   []Brace
 	Branches []int32 // prefix sums: Branches[i] = branch points in lines [0, i)
+	Calls    []Call  // identifiers directly followed by "(" (calls and definitions)
+}
+
+// Call is a name used as a callee on a line (a substring of that line).
+type Call struct {
+	Line int32
+	Name string
 }
 
 // BranchesIn counts branch points (if/for/while/case/catch/&&/||/?) in the
@@ -281,6 +288,9 @@ func Tokenize(lines []string, l *Lang, wantSegs bool, scan *Scan) [][]Seg {
 					cls = ClsKeyword
 				case j < n && line[j] == '(':
 					cls = ClsFunc
+					if scan != nil {
+						scan.Calls = append(scan.Calls, Call{int32(li), w})
+					}
 				case len(w) > 1 && w[0] >= 'A' && w[0] <= 'Z':
 					cls = ClsType
 				}

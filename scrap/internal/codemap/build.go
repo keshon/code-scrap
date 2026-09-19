@@ -63,6 +63,8 @@ type rawFile struct {
 	precise bool
 	scopes  []syntax.Scope
 	decls   []syntax.Decl
+	imports []string
+	calls   [][]string // per scope: distinct callee names inside it
 }
 
 // Build indexes the tree at root and lays it out.
@@ -145,6 +147,15 @@ func Build(root string, opt Options) (*Map, error) {
 	}
 
 	m := assemble(abs, top, files, opt)
+	imports := map[int32][]string{}
+	for i := range m.Files {
+		f := &m.Files[i]
+		if spec := files[f.raw].imports; len(spec) > 0 {
+			imports[f.Node] = spec
+		}
+	}
+	m.buildDeps(imports)
+	m.Stats.Imports = m.Deps.Edges
 	m.sortByName = opt.SortByName
 	m.charAspect = opt.CharAspect
 	if m.charAspect <= 0 {
@@ -277,9 +288,11 @@ func analyze(f *rawFile, precise bool) {
 	if f.lang.Data || f.class.Has(ClassMinified) {
 		return
 	}
+	f.imports = extractImports(f.lang.Name, src)
 	var scan syntax.Scan
 	syntax.Tokenize(lines, f.lang, false, &scan)
 	f.scopes, f.decls = syntax.FindScopes(lines, f.lang, &scan)
+	defer func() { f.calls = callsPerScope(f.scopes, scan.Calls) }()
 	if precise {
 		// Tree-sitter spans are exact, but tags queries skip some definition
 		// shapes (e.g. `const Foo = () => …`), so keep the heuristic's
@@ -289,6 +302,36 @@ func analyze(f *rawFile, precise bool) {
 			f.scopes, f.precise = s, true
 		}
 	}
+}
+
+// callsPerScope gives each scope the distinct names called directly inside
+// it (not in nested scopes), dropping the scope's own definition line.
+func callsPerScope(scopes []syntax.Scope, calls []syntax.Call) [][]string {
+	if len(scopes) == 0 || len(calls) == 0 {
+		return nil
+	}
+	out := make([][]string, len(scopes))
+	seen := make([]map[string]bool, len(scopes))
+	for _, c := range calls {
+		best := -1
+		for i := range scopes {
+			s := &scopes[i]
+			if c.Line >= s.Start && c.Line <= s.End && (best < 0 || s.Depth > scopes[best].Depth) {
+				best = i
+			}
+		}
+		if best < 0 || (c.Line == scopes[best].Start && c.Name == scopes[best].Name) {
+			continue
+		}
+		if seen[best] == nil {
+			seen[best] = map[string]bool{}
+		}
+		if !seen[best][c.Name] {
+			seen[best][c.Name] = true
+			out[best] = append(out[best], strings.Clone(c.Name)) // don't pin the file's text
+		}
+	}
+	return out
 }
 
 func mergeDecls(precise []syntax.Decl, scopes []syntax.Scope, heuristic []syntax.Decl) []syntax.Decl {
@@ -352,7 +395,7 @@ func collapse(n *tnode, isRoot bool) {
 func assemble(abs string, top *tnode, raw []rawFile, opt Options) *Map {
 	computeWeights(top, raw)
 	collapse(top, true)
-	m := &Map{Root: abs}
+	m := &Map{Root: abs, Callers: map[string][]int32{}}
 	m.Files = make([]File, 0, len(raw))
 
 	var add func(t *tnode, parent int32, depth uint8) int32
@@ -364,7 +407,7 @@ func assemble(abs string, top *tnode, raw []rawFile, opt Options) *Map {
 			fi := int32(len(m.Files))
 			m.Files = append(m.Files, File{
 				Node: id, Path: rf.path, Abs: rf.abs, Lang: rf.lang, Class: rf.class,
-				Lines: rf.lines, Bytes: rf.size, Precise: rf.precise,
+				Lines: rf.lines, Bytes: rf.size, Precise: rf.precise, raw: int32(t.file),
 			})
 			n := &m.Nodes[id]
 			n.Kind, n.File, n.Lines, n.Bytes = KindFile, fi, int64(rf.lines), rf.size
@@ -424,7 +467,7 @@ func assemble(abs string, top *tnode, raw []rawFile, opt Options) *Map {
 // addScopes appends scope nodes (pre-order, nested by depth) under a file node.
 func (m *Map) addScopes(fileNode, fi int32, rf *rawFile, depth uint8) {
 	var stack []int32 // open scope per depth
-	for _, s := range rf.scopes {
+	for si, s := range rf.scopes {
 		for len(stack) > s.Depth {
 			m.Nodes[stack[len(stack)-1]].End = int32(len(m.Nodes))
 			stack = stack[:len(stack)-1]
@@ -441,6 +484,12 @@ func (m *Map) addScopes(fileNode, fi int32, rf *rawFile, depth uint8) {
 		})
 		m.Nodes[parent].Children = append(m.Nodes[parent].Children, id)
 		m.Files[fi].Scopes = append(m.Files[fi].Scopes, id)
+		if si < len(rf.calls) {
+			m.Nodes[id].Calls = rf.calls[si]
+			for _, c := range rf.calls[si] {
+				m.Callers[c] = append(m.Callers[c], id)
+			}
+		}
 		m.Symbols = append(m.Symbols, Symbol{strings.ToLower(s.Name), s.Name, id, fi, s.Start, s.Kind})
 		m.Stats.Scopes++
 		m.Files[fi].MaxComplexity = max(m.Files[fi].MaxComplexity, s.Complexity)

@@ -209,6 +209,10 @@ func (ss *session) handle(req request) {
 			go ss.srv.SetView(*req.View)
 		}
 		return
+	case "edges", "calls":
+		if st != nil {
+			resp = relations(st, req.Op, req.Node)
+		}
 	case "pickRay":
 		if st != nil {
 			resp = pickRay(st, req.Ray)

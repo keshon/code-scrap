@@ -55,6 +55,16 @@ func cmdStats(args []string) error {
 	fmt.Printf("dirs      %d\nfiles     %d (%d precise)\nlines     %d\nbytes     %.1f MB\n", s.Dirs, s.Files, s.PreciseFiles, s.Lines, float64(s.Bytes)/1e6)
 	fmt.Printf("scopes    %d\nsymbols   %d\nnodes     %d\n", s.Scopes, s.Symbols, len(m.Nodes))
 	fmt.Printf("index     %d ms\nlayout    %d ms\n", s.IndexMs, s.LayoutMs)
+	if d := m.Deps; d != nil {
+		fmt.Printf("imports   %d edges from %d specifiers (%d external, %d local unresolved)\n", d.Edges, d.Specs, d.External, len(d.Unresolved))
+		n := 0
+		for u := range d.Unresolved {
+			if n++; n > 8 {
+				break
+			}
+			fmt.Printf("          unresolved: %s\n", u)
+		}
+	}
 
 	var classes [6]int
 	for _, f := range m.Files {
