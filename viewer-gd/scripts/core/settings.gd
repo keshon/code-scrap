@@ -9,6 +9,7 @@ extends Node
 
 signal changed(id: String, value: Variant)
 signal reloaded  # a preset was loaded: treat every value as changed
+signal presets_changed  # a user preset was saved
 
 const USER_FILE := "user://settings.json"
 const USER_PRESETS := "user://presets"
@@ -213,7 +214,32 @@ func save_preset(name: String, desc := "") -> String:
 	_preset_values = values
 	_overrides.clear()
 	_save_user()
+	presets_changed.emit()
 	return preset
+
+
+## True when the active preset is the user's own (it can be overwritten).
+func preset_is_user() -> bool:
+	return preset.begins_with("user:")
+
+
+## The display name of the active preset.
+func preset_name() -> String:
+	for p in presets():
+		if p.id == preset:
+			return p.name
+	return preset
+
+
+## True when values differ from the active preset.
+func is_modified() -> bool:
+	return not _overrides.is_empty()
+
+
+## Saves the current values over the active user preset.
+func overwrite_preset() -> void:
+	if preset_is_user():
+		save_preset(preset_name())
 
 
 # ------------------------------------------------------------------ recent folders

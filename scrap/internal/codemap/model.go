@@ -93,6 +93,7 @@ type File struct {
 	Cols   int32
 	Rows   int32
 	Stride float64 // distance between column origins
+	Gutter int32   // characters left of each column's code (line numbers, padding)
 }
 
 // Symbol is a named definition that search can find.
@@ -153,7 +154,7 @@ func (f *File) LineRect(line int32) Rect {
 		return Rect{}
 	}
 	c, r := line/f.Rows, line%f.Rows
-	return rect(f.TX+float64(c)*f.Stride, f.TY+float64(r)*f.LH, ColChars*f.CW, f.LH)
+	return rect(f.CodeX(c), f.TY+float64(r)*f.LH, ColChars*f.CW, f.LH)
 }
 
 // LineAt returns the 0-based line under a world point, or -1.
@@ -163,7 +164,7 @@ func (f *File) LineAt(x, y float64) int32 {
 	}
 	c := int32((x - f.TX) / f.Stride)
 	r := int32((y - f.TY) / f.LH)
-	if c >= f.Cols || r >= f.Rows || x-f.TX-float64(c)*f.Stride > ColChars*f.CW {
+	if c >= f.Cols || r >= f.Rows || x-f.TX-float64(c)*f.Stride > float64(ColChars+f.Gutter)*f.CW {
 		return -1
 	}
 	if l := c*f.Rows + r; l < f.Lines {
@@ -183,7 +184,7 @@ func (f *File) Segments(start, end int32, inset float64) []Rect {
 		a := max(start, c*f.Rows) - c*f.Rows
 		b := min(end, (c+1)*f.Rows-1) - c*f.Rows
 		out = append(out, Rect{
-			X: f.TX + float64(c)*f.Stride - 0.6*f.CW + inset,
+			X: f.CodeX(c) - 0.6*f.CW + inset,
 			Y: f.TY + float64(a)*f.LH - 0.1*f.LH,
 			W: (ColChars+1.2)*f.CW - 2*inset,
 			H: float64(b-a+1)*f.LH + 0.2*f.LH,

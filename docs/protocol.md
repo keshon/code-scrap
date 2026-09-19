@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **6** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **7** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 7 | `options.look = {order, algorithm, palette, lineNumbers}` replaces `stable`/`palette`. Text blocks start with a gutter (line numbers or padding): `hello.text.colChars` includes it, and text keys change with it. |
 | 6 | `overview` op (minimap). `options` accepts `stable` and `palette`. In 3D tiles, folder labels carry the whole box rect (for wall signs). |
 | 5 | Labels carry the box color (`u8 r, g, b`) and, for scopes, the scope kind in the kind byte's high nibble. Scope instances: kind = 2 + scope kind / 10, depth = nesting inside the file. `options` accepts `rules`. |
 | 4 | `children` op. `search` also returns `paths`/`pathTotal` (files and folders). `node` accepts `path` instead of `node`. |
@@ -46,7 +47,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 | `search` | `q` (symbol-name prefix), `page`, `size` (≤ 500) | `search` |
 | `edges` | `node` | relations: imports (file level) |
 | `calls` | `node` | relations: syntax-level call graph |
-| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince`, `stable` (layout by name), `palette` (`pastel` · `neutral` · `cyan`) | no reply. The map rebuilds and a new `hello` follows when anything changed. |
+| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince`, `look: {order (size · name · kind), algorithm (squarified · strip), palette (pastel · neutral · cyan), lineNumbers}` | no reply. The map rebuilds and a new `hello` follows when anything changed. |
 | `open` | `path` | new `hello` once indexed, or `{"op": "error", "error": …}` |
 
 ## Messages (server → viewer)
@@ -55,7 +56,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 6, "gen": 3,
+  "op": "hello", "protocol": 7, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,

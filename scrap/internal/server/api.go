@@ -15,7 +15,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 6
+const Protocol = 7
 
 func hello(st *state) map[string]any {
 	m := st.m
@@ -38,7 +38,7 @@ func hello(st *state) map[string]any {
 		"legend":   legend(m),
 		"text": map[string]any{
 			"font":      st.renderer.Atlas.Font,
-			"colChars":  codemap.ColChars,
+			"colChars":  codemap.ColChars + int(m.Gutter()), // gutter included
 			"blockRows": tile.BlockRows,
 			"texW":      tile.BlockChars,
 		},

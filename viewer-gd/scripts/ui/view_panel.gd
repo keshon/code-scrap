@@ -60,7 +60,17 @@ func _ready() -> void:
 		wb.add_child(SettingRow.new(id, true))
 	vb.add_child(_weights)
 	vb.add_child(SettingRow.new("git.since", true))
-	vb.add_child(SettingRow.new("layout.stable", true))
+	vb.add_child(HSeparator.new())
+	vb.add_child(_section("Layout"))
+	var ldesc := _desc()
+	ldesc.text = "How boxes are arranged inside each folder."
+	vb.add_child(ldesc)
+	for id in ["layout.order", "layout.algorithm"]:
+		var row := SettingRow.new(id, true)
+		vb.add_child(row)
+		var d := _desc()
+		d.text = Settings.defs[id].desc
+		vb.add_child(d)
 
 	vb.add_child(HSeparator.new())
 	vb.add_child(_section("Relations"))

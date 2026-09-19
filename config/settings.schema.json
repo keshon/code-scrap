@@ -70,6 +70,15 @@
           "desc": "The source text printed inside files (dashes far away, letters up close)."
         },
         {
+          "id": "text.line_numbers",
+          "surface": "display",
+          "type": "bool",
+          "default": true,
+          "scope": "server",
+          "label": "Line numbers",
+          "desc": "A gutter with line numbers left of the code, like an editor."
+        },
+        {
           "id": "viewport.hover",
           "surface": "display",
           "type": "bool",
@@ -107,14 +116,6 @@
           "default": true,
           "label": "Viewport header",
           "desc": "Breadcrumb of the selection with camera and display menus."
-        },
-        {
-          "id": "viewport.labels_through",
-          "surface": "display",
-          "type": "bool",
-          "default": false,
-          "label": "Labels through buildings",
-          "desc": "3D: show labels even when a building stands in front of them."
         },
         {
           "id": "viewport.grid",
@@ -257,6 +258,28 @@
           "default": true,
           "label": "Folder names on walls",
           "desc": "3D: print folder names on the terrace wall facing you, like a sign; otherwise they float at the roof edge."
+        },
+        {
+          "id": "labels.occluded",
+          "type": "enum",
+          "options": [
+            "dim",
+            "hide",
+            "show"
+          ],
+          "default": "dim",
+          "label": "Hidden labels",
+          "desc": "3D labels behind buildings: dim = shown faintly through · hide · show = drawn through at full strength."
+        },
+        {
+          "id": "labels.distance_fade",
+          "type": "float",
+          "default": 0.5,
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05,
+          "label": "Distance fade",
+          "desc": "3D: labels of far boxes fade out; 0 = all labels equally strong."
         }
       ]
     },
@@ -474,6 +497,69 @@
           "desc": "directional: walls and bevels shaded by one light · flat: no shading."
         },
         {
+          "id": "look.light_space",
+          "type": "enum",
+          "options": [
+            "camera",
+            "world"
+          ],
+          "default": "camera",
+          "label": "Light follows",
+          "desc": "camera: a headlight that turns with the view, so every face you look at reads (like Softimage) · world: a fixed sun, direction and height below."
+        },
+        {
+          "id": "look.ambient",
+          "type": "float",
+          "default": 0.35,
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05,
+          "label": "Ambient",
+          "desc": "Light that reaches every face. Lower = deeper shadows and stronger volume."
+        },
+        {
+          "id": "look.specular",
+          "type": "float",
+          "default": 0.25,
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05,
+          "label": "Specular",
+          "desc": "Strength of the shiny highlight on faces and edges turned toward the light."
+        },
+        {
+          "id": "look.gloss",
+          "type": "float",
+          "default": 24.0,
+          "min": 2.0,
+          "max": 128.0,
+          "step": 1.0,
+          "label": "Glossiness",
+          "desc": "Size of the specular highlight: low = broad sheen, high = tight glint."
+        },
+        {
+          "id": "look.roof_diffuse",
+          "type": "enum",
+          "options": [
+            "all",
+            "selected",
+            "none"
+          ],
+          "default": "all",
+          "label": "Diffuse-only roofs",
+          "desc": "Keep specular off the top planes (where the code is): all roofs · only the selected box · none."
+        },
+        {
+          "id": "look.edge_bevel",
+          "type": "float",
+          "default": 0.03,
+          "min": 0.0,
+          "max": 0.25,
+          "step": 0.005,
+          "label": "Rounded edges",
+          "desc": "Radius of the vertical box edges, relative to each box's shorter side. More segments are used as the radius grows. 0 = sharp."
+        },
+        {
           "id": "look.light_yaw",
           "type": "float",
           "default": 35.0,
@@ -502,16 +588,6 @@
           "step": 0.05,
           "label": "Light strength",
           "desc": "Contrast between lit and shaded faces."
-        },
-        {
-          "id": "look.bevel",
-          "type": "float",
-          "default": 0.06,
-          "min": 0.0,
-          "max": 0.25,
-          "step": 0.01,
-          "label": "Bevels",
-          "desc": "Chamfered roof edges that catch the light, relative to each box's size. 0 = sharp."
         },
         {
           "id": "look.contact",
@@ -577,35 +653,37 @@
           "id": "highlight.style",
           "type": "enum",
           "options": [
-            "outline",
-            "xray",
+            "silhouette",
+            "tint",
+            "both",
             "off"
           ],
-          "default": "outline",
+          "default": "silhouette",
           "label": "Selection style",
-          "desc": "outline: edges of the selected box where visible · xray: edges drawn through buildings · off: no outline."
+          "desc": "silhouette: one clean outline around the selected box, drawn over everything · tint: the box glows in the selection color · both · off."
         },
         {
           "id": "highlight.fill",
           "type": "float",
-          "default": 0.0,
+          "default": 0.35,
           "min": 0.0,
           "max": 1.0,
           "step": 0.05,
-          "label": "Selection fill",
-          "desc": "Tint of the selected box's roof: 0 = none, 1 = solid."
+          "label": "Tint strength",
+          "desc": "How strongly the tint style colors the selected box (walls and roof)."
         },
         {
           "id": "highlight.hover_style",
           "type": "enum",
           "options": [
-            "outline",
-            "xray",
+            "silhouette",
+            "tint",
+            "both",
             "off"
           ],
-          "default": "outline",
+          "default": "silhouette",
           "label": "Hover style",
-          "desc": "How the box under the cursor is outlined."
+          "desc": "How the box under the cursor is marked (same styles as the selection)."
         }
       ]
     },
@@ -834,13 +912,31 @@
           "desc": "Glob = weight, separated by ; (e.g. src/legacy/** = 0.3; **/*.stories.tsx = 0.2). A repo's .scrap.json can add its own."
         },
         {
-          "id": "layout.stable",
+          "id": "layout.order",
           "surface": "view",
-          "type": "bool",
-          "default": false,
+          "type": "enum",
+          "options": [
+            "size",
+            "name",
+            "kind"
+          ],
+          "default": "size",
           "scope": "server",
-          "label": "Stable layout",
-          "desc": "Place siblings by name instead of largest first, so lenses and edits move boxes as little as possible."
+          "label": "Order",
+          "desc": "How siblings are placed: size = biggest first · name = alphabetical (boxes move least when lenses or files change) · kind = folders first, then files, each alphabetical."
+        },
+        {
+          "id": "layout.algorithm",
+          "surface": "view",
+          "type": "enum",
+          "options": [
+            "squarified",
+            "strip"
+          ],
+          "default": "squarified",
+          "scope": "server",
+          "label": "Layout",
+          "desc": "squarified = the squarest boxes, but the order winds around the space · strip = rows in reading order (left to right, top to bottom), slightly longer boxes."
         }
       ]
     },

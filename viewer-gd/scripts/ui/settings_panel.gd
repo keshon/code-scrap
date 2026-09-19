@@ -10,6 +10,8 @@ var _preset_opt: OptionButton
 var _preset_ids := []
 var _save_row: HBoxContainer
 var _save_name: LineEdit
+var _save_btn: Button
+var _shown_modified := false
 var _body: VBoxContainer
 
 
@@ -46,14 +48,26 @@ func _ready() -> void:
 	_preset_opt.focus_mode = Control.FOCUS_NONE
 	_preset_opt.item_selected.connect(func(i): Settings.load_preset(_preset_ids[i]))
 	pr.add_child(_preset_opt)
+	# Save overwrites your own preset in one click; shipped presets can only
+	# be saved under a new name
+	_save_btn = Button.new()
+	_save_btn.icon = Style.icon("save")
+	_save_btn.tooltip_text = "Save the changes into this preset"
+	_save_btn.focus_mode = Control.FOCUS_NONE
+	_save_btn.pressed.connect(func():
+		Settings.overwrite_preset()
+		_refresh_presets())
+	pr.add_child(_save_btn)
 	var save := Button.new()
 	save.text = "Save as…"
-	save.tooltip_text = "Save the current values as a new preset"
+	save.tooltip_text = "Save the current values as a new preset, or type an existing name to replace it"
 	save.focus_mode = Control.FOCUS_NONE
 	save.pressed.connect(func():
 		_save_row.visible = not _save_row.visible
 		if _save_row.visible:
-			_save_name.grab_focus())
+			_save_name.text = Settings.preset_name() if Settings.preset_is_user() else ""
+			_save_name.grab_focus()
+			_save_name.select_all())
 	pr.add_child(save)
 	var reset_all := Button.new()
 	reset_all.theme_type_variation = "FlatButton"
@@ -114,6 +128,11 @@ func _ready() -> void:
 
 	_refresh_presets()
 	Settings.reloaded.connect(_refresh_presets)
+	Settings.presets_changed.connect(_refresh_presets)
+	# the "modified" mark: only rebuild when it flips (sliders fire often)
+	Settings.changed.connect(func(_id, _v):
+		if Settings.is_modified() != _shown_modified:
+			_refresh_presets())
 	Style.theme_changed.connect(func(): _filter.right_icon = Style.icon("search"))
 	gui_input.connect(func(ev):
 		if ev is InputEventMouseButton:
@@ -146,8 +165,12 @@ func _save_preset() -> void:
 func _refresh_presets() -> void:
 	_preset_opt.clear()
 	_preset_ids = []
+	var modified := Settings.is_modified()
+	_shown_modified = modified
+	_save_btn.disabled = not (Settings.preset_is_user() and modified)
 	for p in Settings.presets():
-		_preset_opt.add_item(p.name + ("  (mine)" if p.user else ""))
+		var mark := "  •" if p.id == Settings.preset and modified else ""
+		_preset_opt.add_item(p.name + ("  (mine)" if p.user else "") + mark)
 		_preset_opt.set_item_tooltip(_preset_ids.size(), p.desc)
 		if p.id == Settings.preset:
 			_preset_opt.select(_preset_ids.size())

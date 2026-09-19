@@ -87,10 +87,6 @@ scrap_roof_tone={
 "type": "float",
 "value": 0.06
 }
-scrap_bevel={
-"type": "float",
-"value": 0.06
-}
 scrap_light_dir={
 "type": "vec3",
 "value": Vector3(0.45, 0.8, 0.3)
@@ -106,6 +102,54 @@ scrap_contact={
 scrap_flat={
 "type": "float",
 "value": 0.0
+}
+scrap_light_space={
+"type": "float",
+"value": 0.0
+}
+scrap_ambient={
+"type": "float",
+"value": 0.35
+}
+scrap_specular={
+"type": "float",
+"value": 0.25
+}
+scrap_gloss={
+"type": "float",
+"value": 24.0
+}
+scrap_roof_diffuse={
+"type": "float",
+"value": 0.0
+}
+scrap_edge_bevel={
+"type": "float",
+"value": 0.03
+}
+scrap_sel_box={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+scrap_sel_top={
+"type": "float",
+"value": 0.0
+}
+scrap_sel_tint={
+"type": "color",
+"value": Color(0, 0, 0, 0)
+}
+scrap_hov_box={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+scrap_hov_top={
+"type": "float",
+"value": 0.0
+}
+scrap_hov_tint={
+"type": "color",
+"value": Color(0, 0, 0, 0)
 }
 
 [rendering]

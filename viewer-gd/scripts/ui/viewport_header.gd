@@ -4,13 +4,12 @@ extends HBoxContainer
 ##   breadcrumb  like a file manager's address bar: each segment selects that
 ##               folder, the › after it lists what is inside to jump to
 ##   camera      camera commands
-##   display ☰   what the viewport draws (labels, text, highlights, …)
+##   display     what the viewport draws: every setting whose schema
+##               surface is "display" (labels, text, highlights, …)
 
 signal crumb_clicked(node: int)
 signal action(name: String)
 
-const DISPLAY := ["viewport.labels", "viewport.code_text", "viewport.hover", "viewport.search_hits",
-	"viewport.arcs", "viewport.legend", "debug.hud"]
 const CAMERA := [["Frame all", "frame_all", "A"], ["Frame selected", "frame_selected", "F"],
 	["Deselect", "deselect", "Q"], ["Select parent", "select_parent", "Backspace"], ["", "", ""],
 	["Switch 2D / 3D", "toggle_view", "Tab"]]
@@ -27,6 +26,7 @@ var _menu: PopupMenu
 var _menu_req := -1
 var _menu_at: Control
 var _menu_ids := []
+var _display_ids := []   # settings listed in the display menu, in schema order
 
 
 func _init(c: ScrapClient) -> void:
@@ -54,7 +54,6 @@ func _ready() -> void:
 	var cam_island := _island()
 	add_child(cam_island)
 	_camera = MenuButton.new()
-	_camera.text = "Camera"
 	_camera.icon = Style.icon("camera")
 	_camera.flat = true
 	_camera.focus_mode = Control.FOCUS_NONE
@@ -76,16 +75,23 @@ func _ready() -> void:
 	var disp_island := _island()
 	add_child(disp_island)
 	_display = MenuButton.new()
-	_display.icon = Style.icon("menu")
+	_display.icon = Style.icon("eye")
 	_display.flat = true
 	_display.focus_mode = Control.FOCUS_NONE
-	_display.tooltip_text = "Viewport display"
+	_display.tooltip_text = "What the viewport shows"
 	var dp := _display.get_popup()
 	dp.hide_on_checkable_item_selection = false
-	for i in DISPLAY.size():
-		dp.add_check_item(Settings.defs[DISPLAY[i]].label, i)
-		dp.set_item_tooltip(i, Settings.defs[DISPLAY[i]].get("desc", ""))
-	dp.id_pressed.connect(func(i): Settings.set_value(DISPLAY[i], not Settings.get_value(DISPLAY[i])))
+	for g in Settings.groups:
+		for d in g.settings:
+			if d.get("surface", "") == "display" and d.type == "bool":
+				dp.add_check_item(d.label, _display_ids.size())
+				dp.set_item_tooltip(dp.item_count - 1, d.get("desc", ""))
+				_display_ids.append(d.id)
+	dp.id_pressed.connect(func(i):
+		var id: String = _display_ids[i]
+		var on: bool = not Settings.get_value(id)
+		Settings.set_value(id, on)
+		dp.set_item_checked(dp.get_item_index(i), on))   # the menu stays open: show it now
 	_display.about_to_popup.connect(_sync_display)
 	disp_island.add_child(_display)
 
@@ -96,7 +102,7 @@ func _ready() -> void:
 	add_child(_menu)
 	client.reply.connect(_on_reply)
 	Style.theme_changed.connect(func():
-		_display.icon = Style.icon("menu")
+		_display.icon = Style.icon("eye")
 		_camera.icon = Style.icon("camera"))
 	set_path("", -1, [])
 
@@ -170,16 +176,18 @@ func _on_reply(rid: int, data: Dictionary) -> void:
 	if items.is_empty():
 		_menu.add_item("(empty)")
 		_menu.set_item_disabled(0, true)
-	# like MenuButton: open below the chevron, in screen coordinates
-	var r: Rect2 = _menu_at.get_screen_rect()
+	# like MenuButton: open below the chevron
+	var scale := _menu_at.get_global_transform_with_canvas().get_scale()
+	var pos := _menu_at.get_screen_position() + Vector2(0, _menu_at.size.y * scale.y)
 	_menu.reset_size()
-	_menu.popup(Rect2i(Vector2i(Vector2(r.position.x, r.end.y).round()), Vector2i.ZERO))
+	_menu.position = Vector2i(pos.round())
+	_menu.popup()
 
 
 func _sync_display() -> void:
 	var dp := _display.get_popup()
-	for i in DISPLAY.size():
-		dp.set_item_checked(i, Settings.get_value(DISPLAY[i]))
+	for i in _display_ids.size():
+		dp.set_item_checked(dp.get_item_index(i), Settings.get_value(_display_ids[i]))
 
 
 func _island() -> PanelContainer:

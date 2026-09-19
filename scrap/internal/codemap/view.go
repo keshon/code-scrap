@@ -21,12 +21,27 @@ type View struct {
 	// the last matching rule wins (repo rules come after the user's).
 	Rules []Rule `json:"rules,omitempty"`
 
-	// Stable lays siblings out by name instead of largest first, so lenses
-	// and edits move boxes as little as possible.
-	Stable bool `json:"stable,omitempty"`
+	// Order places siblings: OrderSize (largest first, the default),
+	// OrderName (alphabetical: lenses and edits move boxes least) or
+	// OrderKind (folders first, then files, each alphabetical).
+	Order string `json:"order,omitempty"`
+	// Algorithm is LayoutSquarified (the default: squarest boxes) or
+	// LayoutStrip (rows in reading order: left to right, top to bottom).
+	Algorithm string `json:"algorithm,omitempty"`
+	// LineNumbers reserves a gutter with line numbers left of the code.
+	LineNumbers bool `json:"lineNumbers,omitempty"`
 	// Palette names the area hue set (tile.Palettes); "" = the default.
 	Palette string `json:"palette,omitempty"`
 }
+
+// Sibling orders and layout algorithms (View.Order, View.Algorithm).
+const (
+	OrderSize        = "size"
+	OrderName        = "name"
+	OrderKind        = "kind"
+	LayoutSquarified = "squarified"
+	LayoutStrip      = "strip"
+)
 
 // Height modes besides the metrics.
 const (
@@ -181,19 +196,29 @@ func (m *Map) reweigh() {
 			}
 		}
 	}
-	byName := m.sortByName || m.View.Stable
+	order := m.View.Order
+	if m.sortByName && order == "" {
+		order = OrderName
+	}
 	for i := range m.Nodes {
 		n := &m.Nodes[i]
 		if n.Kind != KindDir {
 			continue
 		}
 		slices.SortStableFunc(n.Children, func(a, b int32) int {
-			if !byName {
-				if c := cmp.Compare(m.Nodes[b].Weight, m.Nodes[a].Weight); c != 0 {
+			na, nb := &m.Nodes[a], &m.Nodes[b]
+			switch order {
+			case OrderName:
+			case OrderKind:
+				if c := cmp.Compare(na.Kind, nb.Kind); c != 0 {
+					return c
+				}
+			default:
+				if c := cmp.Compare(nb.Weight, na.Weight); c != 0 {
 					return c
 				}
 			}
-			return cmp.Compare(strings.ToLower(m.Nodes[a].Name), strings.ToLower(m.Nodes[b].Name))
+			return cmp.Compare(strings.ToLower(na.Name), strings.ToLower(nb.Name))
 		})
 	}
 }

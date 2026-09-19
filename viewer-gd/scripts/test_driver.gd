@@ -16,6 +16,8 @@ extends Node
 ##   --hud=1           show the diagnostics overlay
 ##   --theme=<id>      use this theme for the run (nothing is saved)
 ##   --set=id:value,…  override settings for the run (nothing is saved)
+##   --select=<path>   select a file or folder by path once connected (and fly to it)
+##   --crumb=<n>       then open the n-th breadcrumb chevron menu
 
 var shell: Node   # main.gd
 var args := {}
@@ -55,6 +57,10 @@ func _ready() -> void:
 		client.hello.connect(func(_i):
 			shell.search.focus()
 			shell.search.search(args.type), CONNECT_ONE_SHOT)
+	if args.has("select"):
+		client.hello.connect(func(_i):
+			shell._pending = {"select": true, "fly": true}
+			shell._node_req = client.request("node", {"path": args.select}), CONNECT_ONE_SHOT)
 	if args.get("view", "") == "3d":
 		client.hello.connect(func(_i): _enter_3d(), CONNECT_ONE_SHOT)
 	if args.has("lens"):
@@ -66,6 +72,11 @@ func _ready() -> void:
 		shell.settings_panel.show()
 	if args.has("hud"):
 		shell.hud.visible = true
+	if args.has("crumb"):
+		get_tree().create_timer(float(args.get("wait", "4")) - 2.0).timeout.connect(func():
+			var chevs: Array = shell.header._crumbs.get_children().filter(func(c): return c is Button and c.text == "")
+			if chevs.size() > int(args.crumb):
+				chevs[int(args.crumb)].pressed.emit())
 	await get_tree().create_timer(float(args.get("wait", "4"))).timeout
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()

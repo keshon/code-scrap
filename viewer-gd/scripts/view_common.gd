@@ -28,10 +28,11 @@ static func tile_fallback(tiles: Dictionary, key: Vector3i, shown: Dictionary) -
 
 
 ## Label placement. Each candidate: {prio (on-screen size), kind (0 dir,
-## 1 file, 2 scope), color, pos (top-left), max_w, size, text}. Directories
-## win over files over scopes, then bigger boxes win; a label that would
-## overlap one already placed (plus the density gap) is dropped. Returns
-## [{c, text, rect, font}] in placement order.
+## 1 file, 2 scope), color, pos (top-left), max_w, size, text}, optionally
+## center (pos is the top-centre) and alts (fallback positions tried when
+## pos collides, e.g. just below a folder tab). Directories win over files
+## over scopes, then bigger boxes win; a label that fits nowhere is dropped.
+## Returns [{c, text, rect, font}] in placement order.
 static func place_labels(cand: Array, budget: int) -> Array:
 	cand.sort_custom(func(a, b):
 		if a.kind != b.kind:
@@ -57,13 +58,19 @@ static func place_labels(cand: Array, budget: int) -> Array:
 			text = text.substr(0, keep) + "…"
 			tw = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var pad := 14.0 if c.kind != 2 else 8.0   # dir stripe / file chip / scope gap
-		var r := Rect2(c.pos, Vector2(tw + pad, fs + 5.0))
-		var hit := false
-		for p in rects:
-			if p.grow(gap).intersects(r):
-				hit = true
+		var sz := Vector2(tw + pad, fs + 5.0)
+		var r := Rect2()
+		var ok := false
+		for spot in [c.pos] + c.get("alts", []):
+			r = Rect2(spot - Vector2(sz.x * 0.5, 0) if c.get("center", false) else spot, sz)
+			ok = true
+			for p in rects:
+				if p.grow(gap).intersects(r):
+					ok = false
+					break
+			if ok:
 				break
-		if hit:
+		if not ok:
 			continue
 		rects.append(r)
 		placed.append({"c": c, "text": text, "rect": r, "font": font})

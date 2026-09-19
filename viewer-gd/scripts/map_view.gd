@@ -685,10 +685,11 @@ func _draw_overlay() -> void:
 			o.draw_rect(rect_to_screen(hover.lineRect), Color(hover_c, 0.12))
 	if selection_rect.size() == 4:
 		var sr := rect_to_screen(selection_rect)
-		var fill: float = Settings.get_value("highlight.fill")
-		if fill > 0.0:
-			o.draw_rect(sr, Color(sel_c, fill * 0.6))
-		if Settings.get_value("highlight.style") != "off":
+		# on the flat map a box's silhouette is its outline; tint fills it
+		var style: String = Settings.get_value("highlight.style")
+		if style == "tint" or style == "both":
+			o.draw_rect(sr, Color(sel_c, float(Settings.get_value("highlight.fill")) * 0.6))
+		if style == "silhouette" or style == "both":
 			_outline(sr, sel_c, Settings.get_value("lines.selected_width"))
 
 
@@ -728,6 +729,10 @@ func _draw_labels() -> void:
 				c.pos = Vector2(max(r.position.x, 0.0) + 2.0, max(r.position.y, 0.0) + 1.0)
 				if kind == 1:
 					c.size = max(fs - 1, 8)
+					# zoomed out, the folder's tab sits where the first file's
+					# name goes: then the name moves just below it
+					if r.size.y > (fs + 6) * 3.0:
+						c.alts = [c.pos + Vector2(0, fs + 7)]
 			cand.append(c)
 	ViewCommon.draw_labels(o, ViewCommon.place_labels(cand, Settings.get_value("labels.max")))
 

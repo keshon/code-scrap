@@ -8,6 +8,8 @@ signal open_folder
 signal open_path(path: String)
 signal view_selected(three_d: bool)
 
+const SEARCH_W := 480.0
+
 var search_field: LineEdit
 var _repo_btn: MenuButton
 var _v2d: Button
@@ -20,22 +22,20 @@ var _recent := []
 
 func _ready() -> void:
 	theme_type_variation = "Bar"
+	# two layers: the left and right groups, and the search field centred
+	# over the whole bar (like an editor's command centre)
 	var hb := HBoxContainer.new()
 	add_child(hb)
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(center)
 
+	# left: app, repository, explorer, 2D / 3D
 	var title := Label.new()
 	title.theme_type_variation = "TitleLabel"
 	title.text = "code-scrap"
 	hb.add_child(title)
 	hb.add_child(VSeparator.new())
-	var tree_btn := _icon_button("sidebar", "Explorer: the file tree", func(): pass)
-	tree_btn.toggle_mode = true
-	tree_btn.button_pressed = Settings.get_value("ui.explorer")
-	tree_btn.toggled.connect(func(on): Settings.set_value("ui.explorer", on))
-	Settings.changed.connect(func(id, v):
-		if id == "ui.explorer":
-			tree_btn.set_pressed_no_signal(v))
-	hb.add_child(tree_btn)
 
 	_repo_btn = MenuButton.new()
 	_repo_btn.flat = false
@@ -52,6 +52,15 @@ func _ready() -> void:
 			open_path.emit(_recent[i - 100]))
 	hb.add_child(_repo_btn)
 
+	var tree_btn := _icon_button("sidebar", "Explorer: the file tree", func(): pass)
+	tree_btn.toggle_mode = true
+	tree_btn.button_pressed = Settings.get_value("ui.explorer")
+	tree_btn.toggled.connect(func(on): Settings.set_value("ui.explorer", on))
+	Settings.changed.connect(func(id, v):
+		if id == "ui.explorer":
+			tree_btn.set_pressed_no_signal(v))
+	hb.add_child(tree_btn)
+
 	var seg := PanelContainer.new()
 	seg.theme_type_variation = "Inset"
 	hb.add_child(seg)
@@ -65,6 +74,12 @@ func _ready() -> void:
 	_v3d = _segment("3D", "3D city (Tab toggles)", group, func(): view_selected.emit(true))
 	segs.add_child(_v3d)
 
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(spacer)
+
+	# right: preset, settings
 	_preset_opt = OptionButton.new()
 	_preset_opt.tooltip_text = "Settings preset"
 	_preset_opt.focus_mode = Control.FOCUS_NONE
@@ -73,22 +88,42 @@ func _ready() -> void:
 	hb.add_child(_preset_opt)
 	_fill_presets()
 	Settings.reloaded.connect(_fill_presets)
+	Settings.presets_changed.connect(_fill_presets)
+	hb.add_child(_icon_button("settings", "Settings (Ctrl+,)", func(): action.emit("settings")))
 
+	# centre: search
 	search_field = LineEdit.new()
 	search_field.placeholder_text = "Go to file, folder or symbol   ·   > command"
 	search_field.tooltip_text = "Files and folders by path, symbols by name prefix. Start with > for commands. ( / or Ctrl+K )"
 	search_field.clear_button_enabled = true
 	search_field.right_icon = Style.icon("search")
-	search_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	search_field.custom_minimum_size = Vector2(160, 0)
-	hb.add_child(search_field)
+	search_field.custom_minimum_size = Vector2(SEARCH_W, 0)
+	center.add_child(search_field)
+	resized.connect(_fit_search)
 
-	hb.add_child(_icon_button("settings", "Settings (Ctrl+,)", func(): action.emit("settings")))
 	Style.theme_changed.connect(func():
 		for b in _icon_buttons:
 			b.icon = Style.icon(b.get_meta("icon"))
 		_repo_btn.icon = Style.icon("folder")
 		search_field.right_icon = Style.icon("search"))
+
+
+## The search field keeps its width but never covers the groups beside it.
+func _fit_search() -> void:
+	var left := 0.0
+	var right := 0.0
+	var hb: HBoxContainer = get_child(0)
+	var past_spacer := false
+	for c in hb.get_children():
+		if c is Control and c.size_flags_horizontal == Control.SIZE_EXPAND_FILL:
+			past_spacer = true
+			continue
+		if past_spacer:
+			right += c.size.x + 8.0
+		else:
+			left += c.size.x + 8.0
+	var room: float = size.x - 2.0 * max(left, right) - 32.0
+	search_field.custom_minimum_size.x = clamp(room, 160.0, SEARCH_W)
 
 
 ## Shows the open repository's name.

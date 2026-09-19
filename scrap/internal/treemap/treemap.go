@@ -87,6 +87,71 @@ func Squarify(weights []float64, r Rect) []Rect {
 	return out
 }
 
+// Strip lays out weights inside r in reading order (Bederson's strip
+// treemap): horizontal rows from top to bottom, items left to right in the
+// order given. A row grows while its average aspect ratio improves. The
+// result reads like text, at the cost of somewhat longer boxes than
+// Squarify.
+func Strip(weights []float64, r Rect) []Rect {
+	out := make([]Rect, len(weights))
+	total := 0.0
+	for _, w := range weights {
+		if w > 0 {
+			total += w
+		}
+	}
+	if total <= 0 || r.W <= 0 || r.H <= 0 {
+		return out
+	}
+	scale := r.W * r.H / total
+	idx := make([]int, 0, len(weights))
+	for i, w := range weights {
+		if w > 0 {
+			idx = append(idx, i)
+		}
+	}
+	avg := func(row []int, sum float64) float64 {
+		h := sum / r.W
+		a := 0.0
+		for _, i := range row {
+			w := weights[i] * scale / h
+			a += max(w/h, h/w)
+		}
+		return a / float64(len(row))
+	}
+	y := r.Y
+	for len(idx) > 0 {
+		n := 1
+		sum := weights[idx[0]] * scale
+		best := avg(idx[:1], sum)
+		for n < len(idx) {
+			s2 := sum + weights[idx[n]]*scale
+			a2 := avg(idx[:n+1], s2)
+			if a2 > best {
+				break
+			}
+			n, sum, best = n+1, s2, a2
+		}
+		h := sum / r.W
+		if n == len(idx) { // the last row takes the remaining height exactly
+			h = r.Y + r.H - y
+		}
+		x := r.X
+		rowSum := 0.0
+		for _, i := range idx[:n] {
+			rowSum += weights[i]
+		}
+		for _, i := range idx[:n] {
+			w := r.W * weights[i] / rowSum
+			out[i] = Rect{x, y, w, h}
+			x += w
+		}
+		y += h
+		idx = idx[n:]
+	}
+	return out
+}
+
 func worst(weights []float64, row []int, sum, side, scale float64) float64 {
 	thick := sum / side
 	w := 0.0

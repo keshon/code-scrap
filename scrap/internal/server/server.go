@@ -178,11 +178,21 @@ func (s *Server) SetGitSince(since string) {
 	}
 }
 
-// SetLook changes the layout order and the area palette.
-func (s *Server) SetLook(stable bool, palette string) {
+// Look is the part of the view set from viewer settings rather than the
+// lens pickers.
+type Look struct {
+	Order       string `json:"order"`
+	Algorithm   string `json:"algorithm"`
+	Palette     string `json:"palette"`
+	LineNumbers bool   `json:"lineNumbers"`
+}
+
+// SetLook changes layout order and algorithm, palette and line numbers.
+func (s *Server) SetLook(l Look) {
 	s.mu.Lock()
-	changed := stable != s.view.Stable || palette != s.view.Palette
-	s.view.Stable, s.view.Palette = stable, palette
+	v := &s.view
+	changed := l.Order != v.Order || l.Algorithm != v.Algorithm || l.Palette != v.Palette || l.LineNumbers != v.LineNumbers
+	v.Order, v.Algorithm, v.Palette, v.LineNumbers = l.Order, l.Algorithm, l.Palette, l.LineNumbers
 	s.mu.Unlock()
 	if changed {
 		s.rebuild()
@@ -251,7 +261,8 @@ func (s *Server) SetView(v codemap.View) {
 	if v.Rules == nil {
 		v.Rules = s.view.Rules
 	}
-	v.Stable, v.Palette = s.view.Stable, s.view.Palette // settings, not lens pickers
+	// settings, not lens pickers
+	v.Order, v.Algorithm, v.Palette, v.LineNumbers = s.view.Order, s.view.Algorithm, s.view.Palette, s.view.LineNumbers
 	s.view = v
 	s.mu.Unlock()
 	s.rebuild()

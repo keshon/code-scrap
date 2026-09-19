@@ -21,6 +21,7 @@ func _init(c: ScrapClient) -> void:
 
 
 func _ready() -> void:
+	theme_type_variation = "Side"
 	custom_minimum_size = Vector2(240, 0)
 	var vb := VBoxContainer.new()
 	add_child(vb)

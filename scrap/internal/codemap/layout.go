@@ -110,7 +110,12 @@ func (m *Map) layoutNode(id int32) {
 		for i, c := range n.Children {
 			ws[i] = m.Nodes[c].Weight
 		}
-		rects := treemap.Squarify(ws, inner)
+		var rects []Rect
+		if m.View.Algorithm == LayoutStrip {
+			rects = treemap.Strip(ws, inner)
+		} else {
+			rects = treemap.Squarify(ws, inner)
+		}
 		for i, c := range n.Children {
 			m.Nodes[c].Rect = rects[i]
 			m.layoutNode(c)
@@ -137,16 +142,18 @@ func (m *Map) layoutText(f *File, r Rect) {
 		return
 	}
 	n := int(f.Lines)
+	f.Gutter = m.Gutter()
+	cc := ColChars + int(f.Gutter) // characters per column, gutter included
 	bestK, bestLH := 1, 0.0
 	// Line height for k columns: lh = min(W / (k*C + (k-1)*gap)*aspect, H / ceil(n/k)).
 	// It is unimodal in k, so scan around the continuous optimum.
 	charAspect := m.charAspect
-	kOpt := math.Sqrt(r.W * float64(n) / (r.H * charAspect * (ColChars + colGap)))
+	kOpt := math.Sqrt(r.W * float64(n) / (r.H * charAspect * float64(cc+colGap)))
 	lo := max(1, int(kOpt)-3)
 	hi := min(n, int(kOpt)+3)
 	for k := lo; k <= hi; k++ {
 		rows := (n + k - 1) / k
-		lh := min(r.W/(float64(k*ColChars+(k-1)*colGap)*charAspect), r.H/float64(rows))
+		lh := min(r.W/(float64(k*cc+(k-1)*colGap)*charAspect), r.H/float64(rows))
 		if lh > bestLH {
 			bestK, bestLH = k, lh
 		}
@@ -156,8 +163,23 @@ func (m *Map) layoutText(f *File, r Rect) {
 	f.Cols = int32((n + rows - 1) / rows)
 	f.LH = bestLH
 	f.CW = bestLH * charAspect
-	f.Stride = float64(ColChars+colGap) * f.CW
+	f.Stride = float64(cc+colGap) * f.CW
 	f.TX, f.TY = r.X, r.Y
+}
+
+// Gutter is the width, in characters, reserved left of each text column:
+// room for line numbers when they are on, else a little padding so code
+// and scope outlines do not touch the box edge.
+func (m *Map) Gutter() int32 {
+	if m.View.LineNumbers {
+		return 7
+	}
+	return 2
+}
+
+// CodeX is the left edge of the code (after the gutter) of column c.
+func (f *File) CodeX(c int32) float64 {
+	return f.TX + float64(c)*f.Stride + float64(f.Gutter)*f.CW
 }
 
 func bounds(rs []Rect) Rect {

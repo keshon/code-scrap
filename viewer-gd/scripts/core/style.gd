@@ -41,10 +41,15 @@ const SHADER_GLOBALS := {
 	"scopes.nested_fade": ["scrap_scope_fade", "f"],
 	"scopes.functions": ["scrap_scope_funcs", "b"],
 	"scopes.containers": ["scrap_scope_containers", "b"],
-	"look.bevel": ["scrap_bevel", "f"],
 	"look.light_strength": ["scrap_light_strength", "f"],
 	"look.contact": ["scrap_contact", "f"],
-	"look.light": ["scrap_flat", "e"],   # 0 directional, 1 flat
+	"look.light": ["scrap_flat", "e"],
+	"look.light_space": ["scrap_light_space", "e"],   # 0 camera, 1 world
+	"look.ambient": ["scrap_ambient", "f"],
+	"look.specular": ["scrap_specular", "f"],
+	"look.gloss": ["scrap_gloss", "f"],
+	"look.roof_diffuse": ["scrap_roof_diffuse", "e"],  # 0 all, 1 selected, 2 none
+	"look.edge_bevel": ["scrap_edge_bevel", "f"],
 	"look.light_yaw": ["", "light"],
 	"look.light_pitch": ["", "light"],
 }
@@ -221,6 +226,8 @@ const ICONS := {
 	"chevron": '<path d="M9 6l6 6-6 6"/>',
 	"camera": '<path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
 	"sidebar": '<rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M9 4.5v15"/>',
+	"eye": '<path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+	"save": '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
 	"close": '<path d="M6 6l12 12M18 6L6 18"/>',
 	"reset": '<path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4.5h4.5"/>',
 	"frame": '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/>',
@@ -283,9 +290,19 @@ func _build() -> Theme:
 	th.set_stylebox("panel", "Panel", _sb(s1, r, Vector4(pad, pad, pad, pad), border, bw, shadow))
 	th.set_stylebox("panel", "PanelContainer", _sb(s1, r, Vector4(pad, pad, pad, pad), border, bw, shadow))
 	for v in [["Bar", s1, r, Vector4(pad, 6, pad, 6), shadow], ["Card", s2, rc, Vector4(pad, 10, pad, 10), 0.0],
-			["Inset", s3, rc, Vector4(3, 3, 3, 3), 0.0], ["Floating", Color(s1, 0.88), rc, Vector4(10, 6, 10, 6), shadow * 0.6]]:
+			["Inset", s3, rc, Vector4(3, 3, 3, 3), 0.0],
+			# panels whose content scrolls: the scrollbar sits close to the edge
+			["Side", s1, r, Vector4(pad, pad, 4, 6), shadow]]:
 		th.set_type_variation(v[0], "PanelContainer")
 		th.set_stylebox("panel", v[0], _sb(v[1], v[2], v[3], border, bw, v[4]))
+	# the viewport frame (a Panel: overlays inside are placed by anchors)
+	th.set_type_variation("ViewportFrame", "Panel")
+	th.set_stylebox("panel", "ViewportFrame", _sb(color("bg"), r, Vector4(0, 0, 0, 0)))
+	# islands over the map: no drop shadow (it reads as smudge on a busy map),
+	# a hairline edge instead
+	th.set_type_variation("Floating", "PanelContainer")
+	var fl := _sb(Color(s1, 0.9), rc, Vector4(10, 6, 10, 6), border if bw > 0 else Color(text, 0.08), max(bw, 1))
+	th.set_stylebox("panel", "Floating", fl)
 
 	# buttons
 	var bn := _sb(s3, rc, ctl, border, bw)

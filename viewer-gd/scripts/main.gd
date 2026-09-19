@@ -37,7 +37,7 @@ const COMMANDS := [
 	["clear", "Clear search", "Esc"],
 	["relation_next", "Next relation", "]"], ["relation_prev", "Previous relation", "["],
 	["bookmark_1", "Go to bookmark 1", "1"], ["bookmark_save_1", "Save bookmark 1", "Ctrl+1"],
-	["toggle_minimap", "Toggle minimap", ""], ["toggle_stable", "Toggle stable layout", ""],
+	["toggle_minimap", "Toggle minimap", ""], ["toggle_line_numbers", "Toggle line numbers", ""],
 ]
 
 var client: ScrapClient
@@ -139,7 +139,11 @@ func _build_ui() -> void:
 	body.add_child(center)
 
 	# viewport
-	var views := Control.new()
+	# the viewport: a rounded frame that clips the map and its overlays to
+	# its corners, like the other zones
+	var views := Panel.new()
+	views.theme_type_variation = "ViewportFrame"
+	views.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
 	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	views.clip_contents = true
 	center.add_child(views)
@@ -191,6 +195,7 @@ func _build_ui() -> void:
 
 	# right: inspector + view
 	var side := PanelContainer.new()
+	side.theme_type_variation = "Side"
 	side.custom_minimum_size = Vector2(320, 0)
 	center.add_child(side)
 	_tabs = TabContainer.new()
@@ -414,8 +419,8 @@ func _do_action(action: String) -> bool:
 			select_and_frame(id, true)
 		"toggle_minimap":
 			Settings.set_value("viewport.minimap", not Settings.get_value("viewport.minimap"))
-		"toggle_stable":
-			Settings.set_value("layout.stable", not Settings.get_value("layout.stable"))
+		"toggle_line_numbers":
+			Settings.set_value("text.line_numbers", not Settings.get_value("text.line_numbers"))
 		"toggle_explorer":
 			Settings.set_value("ui.explorer", not Settings.get_value("ui.explorer"))
 		"open_folder":
@@ -436,8 +441,9 @@ func _send_server_settings() -> void:
 		if id.begins_with("importance."):
 			weights[id.substr(11)] = Settings.get_value(id)
 	client.request("options", {"weights": weights, "rules": Settings.get_value("importance.rules"),
-		"gitSince": Settings.get_value("git.since"), "stable": Settings.get_value("layout.stable"),
-		"palette": Settings.get_value("look.palette")})
+		"gitSince": Settings.get_value("git.since"),
+		"look": {"order": Settings.get_value("layout.order"), "algorithm": Settings.get_value("layout.algorithm"),
+			"palette": Settings.get_value("look.palette"), "lineNumbers": Settings.get_value("text.line_numbers")}})
 
 
 func _on_setting_changed(id: String, _v: Variant) -> void:

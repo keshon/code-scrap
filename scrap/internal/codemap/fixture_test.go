@@ -340,3 +340,48 @@ func TestFileCache(t *testing.T) {
 		t.Errorf("changed file should be re-parsed: %d scopes", len(m3.Files[0].Scopes))
 	}
 }
+
+func TestLayoutOrders(t *testing.T) {
+	m := fixture(t, false)
+	for _, v := range []View{{Order: OrderKind}, {Order: OrderName, Algorithm: LayoutStrip}, {Algorithm: LayoutStrip}} {
+		nm := m.WithView(v)
+		root := &nm.Nodes[0]
+		if v.Order == OrderKind {
+			seenFile := false
+			for _, c := range root.Children {
+				if nm.Nodes[c].Kind == KindFile {
+					seenFile = true
+				} else if seenFile {
+					t.Errorf("folders first: %s after a file", nm.Nodes[c].Name)
+				}
+			}
+		}
+		if v.Algorithm == LayoutStrip && v.Order == OrderName {
+			// reading order: each child starts right of or below the previous
+			for i := 1; i < len(root.Children); i++ {
+				a, b := nm.Nodes[root.Children[i-1]].Rect, nm.Nodes[root.Children[i]].Rect
+				if b.Y == a.Y && b.X < a.X {
+					t.Errorf("strip order broken at %s", nm.Nodes[root.Children[i]].Name)
+				}
+			}
+		}
+	}
+}
+
+func TestGutter(t *testing.T) {
+	m := fixture(t, false)
+	plain := fileByPath(t, m, "src/a.ts")
+	nm := m.WithView(View{LineNumbers: true})
+	var f *File
+	for i := range nm.Files {
+		if nm.Files[i].Path == "src/a.ts" {
+			f = &nm.Files[i]
+		}
+	}
+	if plain.Gutter != 2 || f.Gutter != 7 {
+		t.Fatalf("gutter %d / %d, want 2 / 7", plain.Gutter, f.Gutter)
+	}
+	if lr := f.LineRect(0); lr.X < f.TX+6*f.CW {
+		t.Errorf("code starts inside the line-number gutter: %g < %g", lr.X, f.TX+6*f.CW)
+	}
+}

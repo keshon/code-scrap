@@ -15,6 +15,7 @@ global uniform float scrap_line_px;       // outline width, physical px
 global uniform float scrap_line_min_box;  // boxes smaller than this: no outline
 global uniform float scrap_depth_tone;    // fills lighten with nesting depth
 global uniform float scrap_roof_tone;     // files: lift behind the code text
+global uniform float scrap_edge_bevel;    // rounded corners / box's shorter side (as in 3D)
 
 #include "res://shaders/scope_outline.gdshaderinc"
 
@@ -46,6 +47,24 @@ void fragment() {
 	if ((edges & 4) != 0) line = max(line, edge_cover(fc.x, fc.x + far.x, -1.0, w));
 	if ((edges & 8) != 0) line = max(line, edge_cover(fc.y, fc.y + far.y, -1.0, w));
 	float true_px = v_custom.w / d.x;               // box's shorter side on screen
+	// rounded corners (boxes only; scopes round themselves): outside the
+	// arc the parent shows through, the outline follows the arc
+	float r = v_custom.y < 1.5 ? scrap_edge_bevel * true_px : 0.0;
+	if (r > 1.0) {
+		float ex = 1e6;
+		float ey = 1e6;
+		if ((edges & 1) != 0) ex = min(ex, near.x);
+		if ((edges & 4) != 0) ex = min(ex, far.x);
+		if ((edges & 2) != 0) ey = min(ey, near.y);
+		if ((edges & 8) != 0) ey = min(ey, far.y);
+		if (ex < r && ey < r) {
+			float dd = r - length(vec2(r - ex, r - ey));
+			if (dd < -0.5) {
+				discard;
+			}
+			line = 1.0 - smoothstep(w - 0.5, w + 0.5, dd);
+		}
+	}
 	float outline = line * smoothstep(scrap_line_min_box * 0.5, scrap_line_min_box, true_px);
 	float big = smoothstep(8.0, 90.0, true_px);
 	vec3 hue = v_hue.rgb;

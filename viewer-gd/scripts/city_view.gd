@@ -40,7 +40,9 @@ var _cam: Camera3D
 var _env: Environment
 var _tiles_root: Node3D
 var _overlay: Control
-var _cube: ArrayMesh
+var _cube: ArrayMesh          # plain unit cube: highlights
+var _box: ArrayMesh           # bevelled box: city tiles
+var _box_seg := -1
 var _shader: Shader
 var _origin := [0.5, 0.3]    # floating origin (world x, y)
 var _tiles := {}             # Vector3i -> Rec
@@ -59,13 +61,15 @@ var _wall_of := {}           # node id -> Label3D printed on a wall
 var _wall_free: Array[Label3D] = []
 var _text: TextLayer
 var _plane: ArrayMesh
-var _sel_xray: MeshInstance3D
+# highlights: silhouette = a stencil mask + a grown hull drawn outside it
+# (selection uses stencil value 1, hover 2); tint is drawn by the tile
+# shader itself (scrap_sel_* globals), a scope's slab tint by _sel_fill
+var _sel_mask: MeshInstance3D
+var _sel_line: MeshInstance3D
+var _hov_mask: MeshInstance3D
+var _hov_line: MeshInstance3D
 var _sel_fill: MeshInstance3D
-var _hov_xray: MeshInstance3D
-var _HL_SHADERS := {
-	"outline": preload("res://shaders/highlight_outline.gdshader"),
-	"xray": preload("res://shaders/highlight_xray.gdshader"),
-}
+
 var _arcs_mesh: MeshInstance3D
 var _arcs_origin := []
 var arcs := []
@@ -171,10 +175,13 @@ func _ready() -> void:
 	add_child(_overlay)
 
 	_cube = _make_cube()
+	_rebuild_box()
 	_plane = _make_plane()
 	_sel_fill = _highlight("res://shaders/highlight_fill.gdshader", {})
-	_sel_xray = _highlight("res://shaders/highlight_outline.gdshader", {})
-	_hov_xray = _highlight("res://shaders/highlight_outline.gdshader", {})
+	_sel_mask = _silhouette("res://shaders/silhouette_mask.gdshader", 1, 20)
+	_sel_line = _silhouette("res://shaders/silhouette_line.gdshader", 1, 21)
+	_hov_mask = _silhouette("res://shaders/silhouette_mask.gdshader", 2, 22)
+	_hov_line = _silhouette("res://shaders/silhouette_line.gdshader", 2, 23)
 	_apply_settings()
 	var im := ImmediateMesh.new()
 	_arcs_mesh = MeshInstance3D.new()
@@ -229,26 +236,36 @@ func _fit_viewport() -> void:
 	_dirty = true
 
 
+## The tile box mesh follows the rounded-edge setting (more segments for a
+## bigger radius); tiles already loaded switch to the new mesh.
+func _rebuild_box() -> void:
+	var seg := _box_segments()
+	if seg == _box_seg:
+		return
+	_box_seg = seg
+	_box = _make_box(seg)
+	for key in _tiles:
+		for c in _tiles[key].node.get_children():
+			if c is MultiMeshInstance3D:
+				c.multimesh.mesh = _box
+
+
 ## Re-reads the settings this view uses; cheap, so any change calls it.
 func _apply_settings() -> void:
+	if _box:
+		_rebuild_box()
 	_fov = Settings.get_value("camera.fov")
 	_cam.fov = _fov
 	if _ground:
 		_apply_ground()
 	var sel: Color = Settings.get_value("highlight.selection")
 	var hov: Color = Settings.get_value("highlight.hover")
-	# selection / hover styles: outline (depth tested), xray (through
-	# everything) or off; the roof fill is a separate tint
-	var sm := _sel_xray.material_override as ShaderMaterial
-	var hm := _hov_xray.material_override as ShaderMaterial
-	sm.shader = _HL_SHADERS.get(Settings.get_value("highlight.style"), _HL_SHADERS.outline)
-	hm.shader = _HL_SHADERS.get(Settings.get_value("highlight.hover_style"), _HL_SHADERS.outline)
+	var sm := _sel_line.material_override as ShaderMaterial
+	var hm := _hov_line.material_override as ShaderMaterial
 	sm.set_shader_parameter("color", sel)
 	sm.set_shader_parameter("width_px", float(Settings.get_value("lines.selected_width")) * _f)
-	sm.set_shader_parameter("face_alpha", 0.0)
-	hm.set_shader_parameter("color", Color(hov, 0.55))
+	hm.set_shader_parameter("color", Color(hov, 0.8))
 	hm.set_shader_parameter("width_px", float(Settings.get_value("lines.hover_width")) * _f)
-	hm.set_shader_parameter("face_alpha", 0.0)
 	(_sel_fill.material_override as ShaderMaterial).set_shader_parameter("color",
 		Color(sel, float(Settings.get_value("highlight.fill")) * 0.6))
 	_arcs_origin = []  # rebuild arcs with the current opacity
@@ -309,9 +326,23 @@ func _update_arcs() -> void:
 	im.surface_end()
 
 
+## A silhouette pass: its shader with the stencil reference ref, drawn at
+## render priority prio (mask before line, selection before hover).
+func _silhouette(path: String, ref: int, prio: int) -> MeshInstance3D:
+	var sh := Shader.new()
+	sh.code = (load(path) as Shader).code.replace("compare_always, 1;", "compare_always, %d;" % ref) \
+		.replace("compare_not_equal, 1;", "compare_not_equal, %d;" % ref)
+	var mi := _highlight("", {})
+	var mat := mi.material_override as ShaderMaterial
+	mat.shader = sh
+	mat.render_priority = prio
+	return mi
+
+
 func _highlight(shader_path: String, params: Dictionary) -> MeshInstance3D:
 	var mat := ShaderMaterial.new()
-	mat.shader = load(shader_path)
+	if shader_path != "":
+		mat.shader = load(shader_path)
 	for k in params:
 		mat.set_shader_parameter(k, params[k])
 	var mi := MeshInstance3D.new()
@@ -386,6 +417,62 @@ func _make_cube() -> ArrayMesh:
 	var m := ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return m
+
+
+## A box for the city tiles, shaped in the vertex shader (city.gdshader):
+## rounded vertical edges, seg segments per corner. Every vertex sits on a
+## unit-box corner (VERTEX x, z in {0, 1}) and carries its arc direction
+## (UV) and ring (UV2.x): 0 wall bottom · 1 wall top · 2 roof. The shader
+## turns the radius (world units, per box size) into offsets, so one mesh
+## serves every box and the rounding stays circular.
+static func _make_box(seg: int) -> ArrayMesh:
+	var v := PackedVector3Array()
+	var uv := PackedVector2Array()
+	var uv2 := PackedVector2Array()
+	var nrm := PackedVector3Array()
+	var idx := PackedInt32Array()
+	# corners in ring order (the roof's front-facing winding) and arc starts
+	var corners := [[Vector2(1, 0), -90.0], [Vector2(1, 1), 0.0], [Vector2(0, 1), 90.0], [Vector2(0, 0), 180.0]]
+	var rings := []   # ring type -> first vertex index
+	for ring in 3:
+		rings.append(v.size())
+		for c in corners:
+			for k in seg + 1:
+				var a := deg_to_rad(c[1] + 90.0 * k / seg)
+				v.append(Vector3(c[0].x, 1.0 if ring > 0 else 0.0, c[0].y))
+				uv.append(Vector2(cos(a), sin(a)))
+				uv2.append(Vector2(ring, 0))
+				nrm.append(Vector3.UP)   # the shader sets real normals
+	var n := 4 * (seg + 1)
+	var quad := func(lo: int, hi: int):
+		for i in n:
+			var j := (i + 1) % n
+			var b0 := lo + i
+			var b1 := lo + j
+			var t0 := hi + i
+			var t1 := hi + j
+			idx.append_array([b1, t1, t0, b1, t0, b0])
+	quad.call(rings[0], rings[1])   # walls
+	for i in range(1, n - 1):       # roof: a fan
+		idx.append_array([rings[2], rings[2] + i, rings[2] + i + 1])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_NORMAL] = nrm
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	# the shader moves vertices by up to the box size: keep culling safe
+	m.custom_aabb = AABB(Vector3(-0.1, -0.1, -0.1), Vector3(1.2, 1.2, 1.2))
+	return m
+
+
+## Segments per rounded corner: more as the radius grows.
+static func _box_segments() -> int:
+	var r: float = Settings.get_value("look.edge_bevel")
+	return 1 if r <= 0.0 else clampi(int(ceil(r / 0.25 * 8.0)) + 1, 2, 8)
 
 
 # ---------------------------------------------------------------- camera
@@ -764,16 +851,46 @@ func _place_box(mi: MeshInstance3D, r: Array, top: float, kind := "") -> void:
 
 
 func _update_highlights() -> void:
+	var style: String = Settings.get_value("highlight.style")
+	var hstyle: String = Settings.get_value("highlight.hover_style")
 	var has_sel := not selection.is_empty()
-	_sel_xray.visible = has_sel and Settings.get_value("highlight.style") != "off"
-	_sel_fill.visible = has_sel and float(Settings.get_value("highlight.fill")) > 0.0
+	var sel_scope: bool = has_sel and selection.get("kind", "") == "scope"
+	var sil: bool = has_sel and (style == "silhouette" or style == "both")
+	var tint: bool = has_sel and (style == "tint" or style == "both")
+	_sel_mask.visible = sil
+	_sel_line.visible = sil
+	# a scope has no box of its own: its tint is the slab on the roof
+	_sel_fill.visible = tint and sel_scope
 	if has_sel:
-		_place_box(_sel_xray, selection.rect, selection.top, selection.get("kind", ""))
-		_place_box(_sel_fill, selection.rect, selection.top, selection.get("kind", ""))
+		for mi in [_sel_mask, _sel_line, _sel_fill]:
+			_place_box(mi, selection.rect, selection.top, selection.get("kind", ""))
+	_set_box_global("sel", selection.rect if has_sel and not sel_scope else [], float(selection.get("top", 0.0)),
+		Settings.get_value("highlight.selection"), Settings.get_value("highlight.fill") if tint else 0.0)
 	var hv: bool = hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover") 		and Settings.get_value("highlight.hover_style") != "off"
-	_hov_xray.visible = hv
+	var hsil: bool = hv and (hstyle == "silhouette" or hstyle == "both")
+	var htint: bool = hv and (hstyle == "tint" or hstyle == "both") and hover.get("kind", "") != "scope"
+	_hov_mask.visible = hsil
+	_hov_line.visible = hsil
 	if hv:
-		_place_box(_hov_xray, hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
+		for mi in [_hov_mask, _hov_line]:
+			_place_box(mi, hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
+	_set_box_global("hov", hover.rect if htint else [], float(hover.get("top", 0.0)),
+		Settings.get_value("highlight.hover"), float(Settings.get_value("highlight.fill")) * 0.6)
+	# pixel size for the silhouette's constant-width band
+	var px: float = 2.0 * tan(deg_to_rad(_fov) * 0.5) / max(_vp.size.y, 1.0)
+	for mi in [_sel_line, _hov_line]:
+		(mi.material_override as ShaderMaterial).set_shader_parameter("px_size", px)
+
+
+## Tells the tile shader which box to tint (render space; [] = none).
+func _set_box_global(which: String, rect: Array, top: float, color: Color, strength: float) -> void:
+	var box := Vector4.ZERO
+	if rect.size() == 4 and strength > 0.0:
+		var p := _world_to_render(rect[0], top, rect[1])
+		box = Vector4(p.x, p.z, rect[2] * S, rect[3] * S)
+	RenderingServer.global_shader_parameter_set("scrap_%s_box" % which, box)
+	RenderingServer.global_shader_parameter_set("scrap_%s_top" % which, top * S)
+	RenderingServer.global_shader_parameter_set("scrap_%s_tint" % which, Color(color, strength if box != Vector4.ZERO else 0.0))
 
 
 func _outside(planes: Array[Plane], a: Vector3, b: Vector3) -> bool:
@@ -808,7 +925,7 @@ func _on_tile(t: Dictionary) -> void:
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
 		mm.use_custom_data = true
-		mm.mesh = _cube
+		mm.mesh = _box
 		mm.instance_count = ids.size()
 		mm.buffer = t.buffer
 		var mmi := MultiMeshInstance3D.new()
@@ -1072,9 +1189,16 @@ func _draw_labels() -> void:
 			var kind := int(rec.label_kinds[i])
 			if kind == 0 and walls and _wall_label(id, rec, j, fs, used):
 				continue
+			# anchored at the middle of the box's top edge, on its own roof:
+			# the label is visible exactly when that roof is
+			var at := _world_to_render(rec.label_data[j] + rec.label_data[j + 2] * 0.5, rec.label_data[j + 4],
+				rec.label_data[j + 1] + (rec.label_data[j + 3] * 0.5 if kind == 1 else 0.0))
+			if _cam.is_position_behind(at):
+				continue
+			var sa := _unproject(at)
+			var lfs: int = fs if kind == 0 else max(fs - 1, 8)
 			cand.append({"id": id, "prio": w, "kind": kind, "color": rec.label_colors[i], "text": rec.label_texts[i],
-				"max_w": w - 8.0, "pos": s0 + Vector2(2, -fs - 6), "size": fs if kind == 0 else max(fs - 1, 8),
-				"at": p0})
+				"max_w": w - 8.0, "pos": sa - Vector2(0, lfs + 6), "center": true, "size": lfs, "at": at})
 	_place_labels_3d(ViewCommon.place_labels(cand, Settings.get_value("labels.max")))
 	# wall signs not used this frame go back to the pool
 	for id in _wall_of.keys():
@@ -1156,7 +1280,11 @@ func _wall_label(id: int, rec: Rec, j: int, fs: int, used: Dictionary) -> bool:
 ## 3D labels are Label3D nodes: depth tested, so buildings in front hide
 ## them (unless "Labels through buildings" is on), and pixel-sized.
 func _place_labels_3d(placed: Array) -> void:
-	var through: bool = Settings.get_value("viewport.labels_through")
+	var occluded: String = Settings.get_value("labels.occluded")
+	var through := occluded == "show"
+	var ghosts := occluded == "dim"
+	var fade: float = Settings.get_value("labels.distance_fade")
+	var min_box: float = Settings.get_value("labels.min_box_px")
 	# at 1 render unit from the camera, one physical pixel is this big
 	var px: float = 2.0 * tan(deg_to_rad(_fov) * 0.5) / max(_vp.size.y, 1.0)
 	var bg := Style.color("bg")
@@ -1173,6 +1301,8 @@ func _place_labels_3d(placed: Array) -> void:
 	for id in _label_of:
 		var old: Label3D = _label_of[id]
 		old.visible = false
+		if old.has_meta("ghost"):
+			old.get_meta("ghost").visible = false
 		_label_free.append(old)
 	for p in placed:
 		var c: Dictionary = p.c
@@ -1182,7 +1312,7 @@ func _place_labels_3d(placed: Array) -> void:
 				l = Label3D.new()
 				l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 				l.fixed_size = true
-				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				l.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 				l.render_priority = 10
 				l.outline_render_priority = 9
@@ -1194,26 +1324,46 @@ func _place_labels_3d(placed: Array) -> void:
 		var fs := int(round(float(c.size) * _f))
 		l.visible = true
 		l.position = c.at
+		# far boxes (small on screen) fade their label out
+		var alpha: float = lerp(1.0, smoothstep(min_box, min_box * 4.0, float(c.prio)), fade)
+		alpha = snappedf(alpha, 0.05)
+		# a faint copy drawn through buildings, for labels they hide
+		var ghost: Label3D = l.get_meta("ghost") if l.has_meta("ghost") else null
+		if ghosts and ghost == null:
+			ghost = Label3D.new()
+			ghost.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			ghost.fixed_size = true
+			ghost.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			ghost.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+			ghost.no_depth_test = true
+			ghost.render_priority = 8
+			ghost.outline_render_priority = 7
+			_labels_root.add_child(ghost)
+			l.set_meta("ghost", ghost)
+		if ghost:
+			ghost.visible = ghosts
+			ghost.position = c.at
 		# Label3D rebuilds its mesh on most property changes: only touch what
 		# changed (the pool is reused every frame)
-		var look := [p.text, c.kind, fs, c.color, through, px, Style.theme_id]
+		var look := [p.text, c.kind, fs, c.color, through, ghosts, px, alpha, Style.theme_id]
 		if l.get_meta("look", []) == look:
 			continue
 		l.set_meta("look", look)
-		l.no_depth_test = through
-		l.text = p.text
-		l.font = bold if c.kind == 0 else regular
-		l.font_size = fs
-		l.pixel_size = px
-		l.outline_size = max(int(fs * 0.45), 4)
-		l.offset = Vector2(2.0, 4.0) * _f
 		var col: Color = c.color
-		if c.kind == 0:
-			l.modulate = col.lerp(Color.WHITE, 0.55)
-			l.outline_modulate = Color(bg.lerp(col, 0.3), 0.95)
-		else:
-			l.modulate = Style.color("text2")
-			l.outline_modulate = Color(bg, 0.9)
+		var text_c: Color = col.lerp(Color.WHITE, 0.55) if c.kind == 0 else Style.color("text2")
+		var line_c: Color = Color(bg.lerp(col, 0.3), 0.95) if c.kind == 0 else Color(bg, 0.9)
+		for target in ([l, ghost] if ghost and ghosts else [l]):
+			var t: Label3D = target
+			var a: float = alpha * (0.3 if t == ghost else 1.0)
+			t.no_depth_test = through or t == ghost
+			t.text = p.text
+			t.font = bold if c.kind == 0 else regular
+			t.font_size = fs
+			t.pixel_size = px
+			t.outline_size = max(int(fs * 0.45), 4)
+			t.offset = Vector2(0.0, 4.0) * _f
+			t.modulate = Color(text_c, a)
+			t.outline_modulate = Color(line_c, line_c.a * a)
 	_label_of = next
 
 

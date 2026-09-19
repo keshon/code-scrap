@@ -82,7 +82,7 @@ func (r *Renderer) drawFile(ensure func() *image.RGBA, f *codemap.File, tr codem
 	size := int(math.Round(lhPx * 0.82))
 	cwPx := f.CW * scale
 	for c := c0; c <= c1; c++ {
-		colX := (f.TX + float64(c)*f.Stride - tr.X) * scale
+		colX := (f.CodeX(c) - tr.X) * scale
 		for row := r0; row <= r1; row++ {
 			line := c*f.Rows + row
 			if int(line) >= len(src.Lines) {

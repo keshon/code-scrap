@@ -2,6 +2,8 @@ package tile
 
 import (
 	"hash/fnv"
+	"image/color"
+	"strconv"
 	"unicode/utf8"
 
 	"github.com/keshon/code-scrap/scrap/internal/codemap"
@@ -34,7 +36,7 @@ func TextKey(f *codemap.File, col, seg int32) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(f.Path))
 	var b [16]byte
-	for i, v := range [4]int32{f.Rows, f.Lines, col, seg} {
+	for i, v := range [4]int32{f.Rows, f.Lines, col, seg*64 + f.Gutter} {
 		b[i*4], b[i*4+1], b[i*4+2], b[i*4+3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24)
 	}
 	h.Write(b[:])
@@ -58,7 +60,7 @@ func (b *Boxes) blocks(m *codemap.Map, n *codemap.Node, f *codemap.File, tr code
 	inv := 1 / tr.W
 	for c := int32(0); c < f.Cols; c++ {
 		x := f.TX + float64(c)*f.Stride
-		w := codemap.ColChars * f.CW
+		w := float64(codemap.ColChars+f.Gutter) * f.CW
 		if x > tr.X+tr.W || x+w < tr.X {
 			continue
 		}
@@ -79,6 +81,9 @@ func (b *Boxes) blocks(m *codemap.Map, n *codemap.Node, f *codemap.File, tr code
 		}
 	}
 }
+
+// gutterColor is the tone of line numbers: quieter than comments.
+var gutterColor = color.NRGBA{0x4b, 0x52, 0x5b, 0xff}
 
 // TextBlock builds the textures of one block:
 //   - color: RGBA8, premultiplied syntax color × "has a glyph", so mipmaps
@@ -105,16 +110,32 @@ func (r *Renderer) TextBlock(fileNode int32, col, seg int) (rows int, color, gly
 	}
 	color = make([]byte, BlockChars*rows*4)
 	glyphs = make([]byte, BlockChars*rows*2)
+	g := int(f.Gutter)
 	for row := 0; row < rows; row++ {
 		li := int(first) + row
 		if li >= len(src.Lines) {
 			break
 		}
+		if g > 2 {
+			// line number, right-aligned, one space before the code
+			num := strconv.Itoa(li + 1)
+			for k := 0; k < len(num) && k < g-1; k++ {
+				ci := g - 1 - len(num) + k
+				if ci < 0 {
+					continue
+				}
+				p := (row*BlockChars + ci) * 4
+				color[p], color[p+1], color[p+2], color[p+3] = gutterColor.R, gutterColor.G, gutterColor.B, 255
+				gi := r.Atlas.Index(rune(num[k]))
+				q := (row*BlockChars + ci) * 2
+				glyphs[q], glyphs[q+1] = byte(gi), byte(gi>>8)
+			}
+		}
 		text := src.Lines[li]
 		for _, s := range src.Segs[li] {
 			c := classColors[s.Cls]
-			ci := charIndex(text, int(s.Col))
-			for bi := int(s.Col); bi < int(s.Col)+int(s.Len) && bi < len(text) && ci < codemap.ColChars; ci++ {
+			ci := g + charIndex(text, int(s.Col))
+			for bi := int(s.Col); bi < int(s.Col)+int(s.Len) && bi < len(text) && ci < g+codemap.ColChars; ci++ {
 				ru, w := utf8.DecodeRuneInString(text[bi:])
 				bi += w
 				if ru == ' ' {

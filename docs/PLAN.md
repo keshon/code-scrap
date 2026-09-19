@@ -288,6 +288,31 @@ A viewport overlay (bottom-right, collapsible) generated from what's active: col
 
 ---
 
+## Phase 6 — review of 2026-09-19 (third round)
+
+| # | Point | Done |
+|---|---|---|
+| 1 | Volume hard to read; specular control | Settings → Look: **Light follows** camera (a headlight, as in Softimage) or world (a sun); ambient; specular strength and glossiness |
+| 2 | Bevels on vertical edges | Rounded vertical edges with a radius setting; the segment count grows with the radius. Real geometry, shaped per box in the vertex shader, only at real corners. The 2D map rounds its corners from the same setting. The cap chamfer was tried and dropped (not worth its trouble); the fake roof-band bevel is gone |
+| 3 | Selection: tint or a clean outline | Styles: **silhouette** (one outline around the box, no inner edges, drawn over everything, stencil based) · tint (the box itself glows) · both · off. The same for hover |
+| 4 | Diffuse-only top planes | **Diffuse-only roofs**: all · selected only · none |
+| 5 | Code glued to the left edge | A gutter: line numbers (☰ → Line numbers) or 2 characters of padding. Scope outlines and search hits start after it (server, protocol v7) |
+| 6 | 2D: folder tab hides the first file's name | A label that collides tries fallback spots; a file name steps below the folder tab |
+| 7 | 3D labels on walls or inside neighbours | Labels sit centred on their own roof. **Hidden labels**: dim (a faint copy through buildings) · hide · show. **Distance fade** for far boxes |
+| 8 | Breadcrumb arrows did nothing | Fixed (the menu opened with a zero size) |
+| 9 | Overwriting a preset | **Save** overwrites your own preset in one click; *Save as…* is prefilled with its name; a dot marks unsaved changes |
+| 10–12 | Top bar | Repository, then Explorer toggle; preset next to settings; the search field centred and at most 480 px wide |
+| 13 | Viewport corners | The viewport is a rounded frame that clips the map and its overlays |
+| 14 | ☰ checkmarks | Update while the menu is open; the menu now lists every display setting from the schema (Minimap, Ground grid and Line numbers were missing) |
+| 15 | Mixed icon/text buttons | Camera and display are icons; the display menu has an eye icon |
+| 16 | Shadows under floating islands | Removed; a hairline edge instead |
+| 17 | Paddings | Panels with scrolling content (Explorer, right pane) keep the scrollbar close to the edge |
+| 18 | Map order is incomprehensible | View tab → **Layout**: order (size · name · folders first) and algorithm (squarified, or **strip**: rows in reading order). Squarified alternates vertical and horizontal strips, which is why its order looked random |
+
+Next, to decide together: the "colored roofs" look from the early screenshot (see the end of this review).
+
+---
+
 ## Naming (point 2)
 
 The project deserves a name that describes zooming from altitude down to the text. Options:
