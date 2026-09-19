@@ -220,6 +220,7 @@ func set_arcs(list: Array) -> void:
 
 ## Arcs are rebuilt when they change or the floating origin moves.
 func _update_arcs() -> void:
+	_arcs_mesh.visible = Settings.get_value("viewport.arcs")
 	if _arcs_origin == _origin:
 		return
 	_arcs_origin = _origin.duplicate()
@@ -637,6 +638,8 @@ func _update_text(cam_pos: Vector3) -> void:
 			if line_px >= min_px:
 				seen[k] = wanted.size()
 				wanted.append([line_px, b])
+	if not Settings.get_value("viewport.code_text"):
+		wanted = []
 	_text.update(wanted, int(Settings.get_value("text.budget")), func(node: Node3D, b: Dictionary):
 		node.position = _world_to_render(b.x, b.top, b.y)
 		node.scale = Vector3(b.w * S, 1.0, b.h * S))
@@ -659,7 +662,7 @@ func _update_highlights() -> void:
 	if _sel_xray.visible:
 		_place_box(_sel_xray, selection.rect, selection.top, selection.get("kind", ""))
 		_place_box(_sel_fill, selection.rect, selection.top, selection.get("kind", ""))
-	var hv := hover.has("rect") and int(hover.get("node", -1)) >= 0
+	var hv: bool = hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover")
 	_hov_xray.visible = hv
 	if hv:
 		_place_box(_hov_xray, hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
@@ -875,6 +878,13 @@ func _on_reply(id: int, data: Dictionary) -> void:
 		_overlay.queue_redraw()
 
 
+## Shows a selection made elsewhere (no signal).
+func set_selection(rect: Array, top: float, kind := "") -> void:
+	selection = {"rect": rect, "top": top, "kind": kind}
+	_update_highlights()
+	_overlay.queue_redraw()
+
+
 func select(id: int, rect: Array, top: float, kind := "") -> void:
 	selection = {"rect": rect, "top": top, "kind": kind}
 	selected.emit(id)
@@ -897,7 +907,8 @@ func _project_roof(r: Array, top: float) -> PackedVector2Array:
 func _draw_overlay() -> void:
 	var o := _overlay
 	var HIT_COLOR: Color = Settings.get_value("highlight.search")
-	for f in hit_files:
+	var show_hits: bool = Settings.get_value("viewport.search_hits")
+	for f in (hit_files if show_hits else []):
 		var pts := _project_roof(f, f[4] if f.size() > 4 else 0.0)
 		if pts.size() == 4:
 			var extent := sqrt(max(Rect2(pts[0], Vector2.ZERO).expand(pts[1]).expand(pts[2]).expand(pts[3]).get_area(), 0.0))
@@ -911,7 +922,8 @@ func _draw_overlay() -> void:
 		var pts := _project_roof(current_hit.rect, current_hit.top)
 		if pts.size() == 4:
 			o.draw_colored_polygon(pts, Color(HIT_COLOR, 0.5))
-	_draw_labels()
+	if Settings.get_value("viewport.labels"):
+		_draw_labels()
 
 
 func _draw_labels() -> void:

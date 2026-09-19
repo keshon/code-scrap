@@ -1,7 +1,13 @@
 extends Control
-## App shell: lays out the zones (toolbar, viewport, side panel, status bar)
-## and wires them to the views and the server. The pieces live in
-## scripts/ui/; scripted runs live in TestDriver.
+## App shell: lays out the zones and wires them to the views and the server.
+##
+##   top bar      app · repository · 2D|3D · preset · search/commands · settings
+##   left         Display panel: lenses and overlays
+##   viewport     header (breadcrumb, camera, display ☰) · map/city · legend · HUD
+##   right        Inspector (with relations) · Search results
+##   status bar   server · progress · hover · keymap hints · fps
+##
+## The pieces live in scripts/ui/; scripted runs live in TestDriver.
 ##
 ## Command-line (after `--`):
 ##   --repo=<path>     folder to index when this viewer starts the server
@@ -15,10 +21,25 @@ const REL_COLORS := {
 	"calls": ["relations.calls_out", "relations.calls_in"],
 }
 
+# commands offered by the search field's ">" mode: [id, label, keys]
+const COMMANDS := [
+	["frame_all", "Frame all", "A"], ["frame_selected", "Frame selection", "F"],
+	["deselect", "Deselect", "Q"], ["select_parent", "Select parent", "Backspace"],
+	["toggle_view", "Switch 2D / 3D", "Tab"], ["toggle_imports", "Toggle import arcs", ""],
+	["toggle_calls", "Toggle call arcs", ""], ["toggle_display_panel", "Toggle display panel", ""],
+	["toggle_hud", "Toggle diagnostics overlay", "F12"], ["open_folder", "Open folder…", ""],
+	["settings", "Settings", "Ctrl+,"], ["theme:calm", "Theme: Calm", ""], ["theme:fui", "Theme: FUI", ""],
+	["keymap:maya", "Keymap: Maya", ""], ["keymap:classic", "Keymap: Classic", ""],
+	["clear", "Clear search", "Esc"],
+]
+
 var client: ScrapClient
 var map: MapView
 var city: CityView
 var toolbar: Toolbar
+var display: DisplayPanel
+var header: ViewportHeader
+var legend: Legend
 var status: StatusBar
 var inspector: Inspector
 var search: SearchPanel
@@ -29,16 +50,15 @@ var args := {}
 
 var _frame: MarginContainer
 var _tabs: TabContainer
-var _legend: Label
-var _legend_box: PanelContainer
 var _open_dialog: FileDialog
 var _connected := false
 var _selected_id := -1
+var _shown_node := -1        # node the inspector shows
 var _rel_reqs := {}          # request id -> op
 var _rel := {}               # op -> reply
 var _node_req := -1
-var _go_parent := false      # next node reply: select its parent
-var _fly_after_node := false # next node reply: select it and fly there
+var _pending := {}           # what to do with the next node reply: {parent, select, fly}
+var _last_root := ""
 
 
 func _ready() -> void:
@@ -65,9 +85,11 @@ func _ready() -> void:
 	Settings.changed.connect(_on_setting_changed)
 	Settings.reloaded.connect(func():
 		_send_server_settings()
-		_push_arcs())
+		_apply_layout()
+		_refresh_relations())
 	Style.theme_changed.connect(_apply_theme)
 	_apply_theme()
+	_apply_layout()
 
 	if args.has("shot"):
 		add_child(TestDriver.new(self, args))
@@ -80,24 +102,34 @@ func _build_ui() -> void:
 	var root := VBoxContainer.new()
 	_frame.add_child(root)
 
+	# top bar
 	toolbar = Toolbar.new()
 	root.add_child(toolbar)
 	toolbar.action.connect(_do_action)
-	toolbar.open_folder.connect(func(): _open_dialog.popup_centered_ratio(0.6))
+	toolbar.open_folder.connect(func(): _do_action("open_folder"))
+	toolbar.open_path.connect(func(p): client.request("open", {"path": p}))
 	toolbar.view_selected.connect(set_view)
-	toolbar.lens_changed.connect(func(v):
+
+	var body := HSplitContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(body)
+
+	# left: display panel
+	display = DisplayPanel.new()
+	body.add_child(display)
+	display.lens_changed.connect(func(v):
 		client.request("options", {"view": v})
 		status.set_progress("applying view…"))
-	toolbar.relations_changed.connect(_refresh_relations)
 
-	# viewport zone + side panel zone
-	var split := HSplitContainer.new()
-	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(split)
+	var center := HSplitContainer.new()
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(center)
+
+	# viewport
 	var views := Control.new()
 	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	views.clip_contents = true
-	split.add_child(views)
+	center.add_child(views)
 	map = MapView.new()
 	map.set_anchors_preset(Control.PRESET_FULL_RECT)
 	views.add_child(map)
@@ -107,45 +139,64 @@ func _build_ui() -> void:
 	views.add_child(city)
 
 	# viewport overlays; the map's tile levels use z up to 1000
+	header = ViewportHeader.new()
+	header.z_index = 2000
+	header.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	header.offset_left = 10
+	header.offset_right = -10
+	header.offset_top = 10
+	views.add_child(header)
+	header.crumb_clicked.connect(func(id): select_and_frame(id, true))
+	header.action.connect(_do_action)
+	legend = Legend.new()
+	legend.z_index = 2000
+	legend.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	legend.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	legend.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	legend.offset_right = -10
+	legend.offset_bottom = -10
+	views.add_child(legend)
+	legend.area_clicked.connect(func(id): select_and_frame(id, true))
+	hud = Hud.new(map, city)
+	hud.z_index = 2000
+	hud.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	hud.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	hud.offset_left = 10
+	hud.offset_bottom = -10
+	views.add_child(hud)
 	settings_panel = SettingsPanel.new()
 	settings_panel.visible = false
-	settings_panel.z_index = 2000
+	settings_panel.z_index = 2001
 	settings_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
 	settings_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	views.add_child(settings_panel)
-	_legend_box = PanelContainer.new()
-	_legend_box.theme_type_variation = "Floating"
-	_legend_box.z_index = 2000
-	_legend_box.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_legend_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_legend_box.position += Vector2(12, -12)
-	_legend_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_legend_box.visible = false
-	_legend = Label.new()
-	_legend.theme_type_variation = "SmallLabel"
-	_legend_box.add_child(_legend)
-	views.add_child(_legend_box)
-	hud = Hud.new(map, city)
-	hud.z_index = 2000
-	hud.position = Vector2(12, 12)
-	views.add_child(hud)
 
+	# right: inspector + search results
 	var side := PanelContainer.new()
-	side.custom_minimum_size = Vector2(340, 0)
-	split.add_child(side)
+	side.custom_minimum_size = Vector2(320, 0)
+	center.add_child(side)
 	_tabs = TabContainer.new()
 	side.add_child(_tabs)
 	inspector = Inspector.new()
 	_tabs.add_child(inspector)
+	inspector.node_clicked.connect(func(id): select_and_frame(id, true))
 	search = SearchPanel.new(client)
 	_tabs.add_child(search)
+	search.bind_field(toolbar.search_field)
+	for c in COMMANDS:
+		search.commands.append({"id": c[0], "label": c[1], "keys": c[2]})
+	toolbar.search_field.focus_entered.connect(show_search_tab)
 	search.hit_chosen.connect(_go_to_hit)
+	search.file_chosen.connect(select_and_frame)
+	search.command_chosen.connect(_do_action)
 	search.results_changed.connect(func(files, lines):
 		map.set_search_results(files, lines)
-		city.set_search_results(files))
+		city.set_search_results(files)
+		legend.set_search(true))
 	search.cleared.connect(func():
 		map.clear_search()
-		city.clear_search())
+		city.clear_search()
+		legend.set_search(false))
 	search.escaped.connect(func(): (city if is_3d() else map).grab_focus())
 
 	status = StatusBar.new()
@@ -167,6 +218,12 @@ func _apply_theme() -> void:
 	_frame.get_child(0).add_theme_constant_override("separation", gap)
 
 
+## Zone visibility from settings.
+func _apply_layout() -> void:
+	display.visible = Settings.get_value("ui.display_panel")
+	header.visible = Settings.get_value("viewport.header")
+
+
 func show_search_tab() -> void:
 	_tabs.current_tab = search.get_index()
 
@@ -183,7 +240,6 @@ func set_view(three_d: bool) -> void:
 		return
 	if three_d:
 		city.hit_files = map.hit_files
-		city.selection = {} if map.selection_rect.is_empty() else {"rect": map.selection_rect, "top": 0.0}
 		city.enter(map.cx, map.cy, map.zoom)
 		city.visible = true
 		map.visible = false
@@ -203,6 +259,16 @@ func _on_city_exited(cx: float, cy: float, zoom: float) -> void:
 	map.grab_focus()
 
 
+## Selects a node by id in the active view (and mirrors it into the other),
+## optionally flying there. Used by breadcrumbs, legend, relation lists and
+## search file rows.
+func select_and_frame(id: int, fly: bool) -> void:
+	if id < 0:
+		return
+	_pending = {"select": true, "fly": fly and not args.has("nofly")}
+	_node_req = client.request("node", {"node": id})
+
+
 # ---------------------------------------------------------------- actions
 
 func _unhandled_key_input(ev: InputEvent) -> void:
@@ -214,8 +280,14 @@ func _unhandled_key_input(ev: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## Runs a keymap action; false when it does not apply here.
+## Runs a keymap action or command; false when it does not apply here.
 func _do_action(action: String) -> bool:
+	if action.begins_with("theme:"):
+		Settings.set_value("ui.theme", action.substr(6))
+		return true
+	if action.begins_with("keymap:"):
+		Settings.set_value("ui.keymap", action.substr(7))
+		return true
 	match action:
 		"search":
 			show_search_tab()
@@ -237,17 +309,25 @@ func _do_action(action: String) -> bool:
 			set_view(not is_3d())
 		"select_parent":
 			if _selected_id >= 0:
+				_pending = {"parent": true}
 				_node_req = client.request("node", {"node": _selected_id})
-				_go_parent = true
 		"clear":
 			if settings_panel.visible:
 				settings_panel.hide()
 			else:
+				toolbar.search_field.text = ""
 				search.clear()
 		"settings":
 			settings_panel.toggle()
 		"toggle_hud":
 			Settings.set_value("debug.hud", not Settings.get_value("debug.hud"))
+		"toggle_imports", "toggle_calls":
+			var id := "relations." + action.substr(7)
+			Settings.set_value(id, not Settings.get_value(id))
+		"toggle_display_panel":
+			Settings.set_value("ui.display_panel", not Settings.get_value("ui.display_panel"))
+		"open_folder":
+			_open_dialog.popup_centered_ratio(0.6)
 		_:
 			return false
 	return true
@@ -267,8 +347,12 @@ func _send_server_settings() -> void:
 
 
 func _on_setting_changed(id: String, _v: Variant) -> void:
-	if id.begins_with("relations."):
+	if id == "relations.imports" or id == "relations.calls":
+		_refresh_relations()
+	elif id.begins_with("relations."):
 		_push_arcs()
+	elif id == "ui.display_panel" or id == "viewport.header":
+		_apply_layout()
 	elif Settings.defs.get(id, {}).get("scope", "") == "server":
 		_send_server_settings()
 
@@ -284,12 +368,17 @@ func _on_connection(ok: bool) -> void:
 func _on_hello(info: Dictionary) -> void:
 	var regen: bool = hello_info.has("gen") and int(hello_info.gen) != int(info.gen)
 	hello_info = info
-	toolbar.sync_view(info)
-	var lens := toolbar.color_lens_label()
-	_legend.text = "" if lens == "" else "blue = low · red = high " + lens.to_lower()
-	_legend_box.visible = _legend.text != ""
+	display.sync(info)
+	legend.set_view(info.get("legend", {}), display.color_lens())
+	toolbar.set_repo(info.name, info.root)
+	header.set_repo(info.name)
+	if info.root != _last_root:
+		_last_root = info.root
+		Settings.add_recent(info.root)
 	if regen:
 		_refresh_relations()  # geometry may have moved with the new view
+		if _selected_id >= 0:
+			_node_req = client.request("node", {"node": _selected_id})  # fresh rect for the highlight
 	var s: Dictionary = info.stats
 	var pass_name := "precise" if info.precise else "fast"
 	status.set_progress("%s · %s files · %s lines · %s pass" % [info.name, Fmt.num(s.Files), Fmt.num(s.Lines), pass_name])
@@ -321,39 +410,62 @@ func _on_hover(h: Dictionary) -> void:
 	status.set_status(s)
 
 
+## A view selected something (click, search) or cleared its selection.
 func _on_selected(id: int) -> void:
+	var changed := id != _selected_id
 	_selected_id = id
 	if id < 0:
+		_shown_node = -1
 		inspector.clear_node()
-	else:
+		header.set_path("", [])
+		map.deselect()   # both return early when already clear
+		city.deselect()
+	elif id != _shown_node:
 		_node_req = client.request("node", {"node": id})
-	_refresh_relations()
+	if changed:
+		_refresh_relations()
 
 
 func _on_reply(id: int, data: Dictionary) -> void:
 	match data.get("op"):
 		"node":
-			if id != _node_req:
-				return
-			if _go_parent:
-				_go_parent = false
-				var parent := int(data.get("parent", -1))
-				if parent >= 0:
-					_node_req = client.request("node", {"node": parent})
-					_fly_after_node = true
-				return
-			inspector.show_node(data)
-			if _tabs.current_tab != search.get_index() or search.query == "":
-				_tabs.current_tab = inspector.get_index()
-			if _fly_after_node:
-				_fly_after_node = false
-				map.select_node(int(data.node), data.rect)
-				var t := map.fit_rect(data.rect)
-				map.fly_to(t[0], t[1], t[2])
+			if id == _node_req:
+				_on_node(data)
 		"edges", "calls":
 			if _rel_reqs.get(id, "") == data.op:
 				_rel[data.op] = data
 				_push_arcs()
+
+
+func _on_node(data: Dictionary) -> void:
+	var p := _pending
+	_pending = {}
+	if p.get("parent", false):
+		select_and_frame(int(data.get("parent", -1)), true)
+		return
+	var nid := int(data.get("node", -1))
+	if nid < 0:
+		return
+	var kind := "scope" if data.kind == "scope" else "file"
+	if p.get("select", false):
+		_shown_node = nid  # the select below re-emits selected: no second request
+		if is_3d():
+			city.select(nid, data.rect, float(data.top), kind)
+			if p.fly:
+				city.focus_rect(data.rect, float(data.top))
+		else:
+			map.select_node(nid, data.rect)
+			if p.fly:
+				var t := map.fit_rect(data.rect)
+				map.fly_to(t[0], t[1], t[2])
+	_shown_node = nid
+	# mirror the selection into the other view
+	map.set_selection(nid, data.rect)
+	city.set_selection(data.rect, float(data.top), kind)
+	inspector.show_node(data)
+	header.set_path(String(data.name), data.get("ancestors", []))
+	if _tabs.current_tab != search.get_index() or search.query == "":
+		_tabs.current_tab = inspector.get_index()
 
 
 # ---------------------------------------------------------------- relations
@@ -363,11 +475,14 @@ func _refresh_relations() -> void:
 	_rel = {}
 	_rel_reqs = {}
 	_push_arcs()
+	var imports: bool = Settings.get_value("relations.imports")
+	var calls: bool = Settings.get_value("relations.calls")
+	legend.set_relations(imports and _selected_id >= 0, calls and _selected_id >= 0)
 	if _selected_id < 0:
 		return
-	if toolbar.imports.button_pressed:
+	if imports:
 		_rel_reqs[client.request("edges", {"node": _selected_id})] = "edges"
-	if toolbar.calls.button_pressed:
+	if calls:
 		_rel_reqs[client.request("calls", {"node": _selected_id})] = "calls"
 
 
@@ -387,23 +502,19 @@ func _push_arcs() -> void:
 
 # ---------------------------------------------------------------- search hits
 
-func _fly_to_search() -> bool:
-	return Settings.get_value("camera.fly_to_search") and not args.has("nofly")
-
-
-func _go_to_hit(h: Dictionary) -> void:
+func _go_to_hit(h: Dictionary, fly: bool) -> void:
+	fly = fly and not args.has("nofly")
 	if is_3d():
 		city.current_hit = {"rect": h.rect, "top": float(h.top)}
 		city.select(int(h.node), h.rect, float(h.top), "scope" if h.kind != "block" else "file")
-		if _fly_to_search():
+		if fly:
 			city.focus_line(h.rect, float(h.top), 16.0)
 		return
 	map.current_hit = h.rect
 	map.select_node(int(h.node), h.rect)
-	if not _fly_to_search():
+	if not fly:
 		return
 	if args.has("focus"):
-		_node_req = client.request("node", {"node": int(h.fileNode)})
-		_fly_after_node = true
+		select_and_frame(int(h.fileNode), true)
 	else:
 		map.focus_line(h.rect, 16.0)

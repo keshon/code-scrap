@@ -1,6 +1,11 @@
 class_name Inspector
 extends RichTextLabel
-## Details of the selected node: identity, metrics, relation counts.
+## Details of the selected node: identity, metrics, and its relations as
+## clickable lists (imports, importers, calls, callers).
+
+signal node_clicked(node: int)
+
+const LIST_MAX := 25
 
 var _node := {}
 var _rel := {}
@@ -10,6 +15,8 @@ func _ready() -> void:
 	name = "Inspector"
 	bbcode_enabled = true
 	selection_enabled = true
+	meta_underlined = false
+	meta_clicked.connect(func(m): node_clicked.emit(int(str(m))))
 	Style.theme_changed.connect(_render)
 	Settings.changed.connect(func(id, _v):
 		if id.begins_with("relations."):
@@ -70,12 +77,34 @@ func _render() -> void:
 	else:
 		t += "[color=%s]No function metrics for this selection.[/color]\n" % dim
 	if _rel.has("edges"):
-		var r: Dictionary = _rel.edges
-		t += "\n[b]Imports[/b]\n[color=%s]imports %d[/color] · [color=%s]imported by %d[/color]\n" % [_set_hex("relations.imports_out"), int(r.outTotal), _set_hex("relations.imports_in"), int(r.inTotal)]
+		t += "\n[b]Imports[/b]\n"
+		t += _list(_rel.edges, "out", "imports", "relations.imports_out")
+		t += _list(_rel.edges, "in", "imported by", "relations.imports_in")
 	if _rel.has("calls"):
-		var r: Dictionary = _rel.calls
-		t += "\n[b]Calls[/b] [color=%s](syntax-level)[/color]\n[color=%s]calls %d[/color] · [color=%s]called by %d[/color]\n" % [dim, _set_hex("relations.calls_out"), int(r.outTotal), _set_hex("relations.calls_in"), int(r.inTotal)]
+		t += "\n[b]Calls[/b] [color=%s](syntax-level)[/color]\n" % dim
+		t += _list(_rel.calls, "out", "calls", "relations.calls_out")
+		t += _list(_rel.calls, "in", "called by", "relations.calls_in")
 	text = t
+
+
+## One direction of a relation reply as a counted, clickable list.
+func _list(r: Dictionary, dir: String, title: String, color_id: String) -> String:
+	var edges: Array = r[dir]
+	var total := int(r[dir + "Total"])
+	var names: Dictionary = r.get("names", {})
+	var t := "[color=%s]● %s %d[/color]\n" % [_set_hex(color_id), title, total]
+	var seen := {}
+	for e in edges:
+		var other := int(e[1]) if dir == "out" else int(e[0])
+		if seen.has(other):
+			continue
+		if seen.size() >= LIST_MAX:
+			break
+		seen[other] = true
+		t += "   [url=%d]%s[/url]\n" % [other, _esc(names.get(str(other), "#%d" % other))]
+	if total > seen.size():
+		t += "   [color=%s]… %d more[/color]\n" % [_hex("text3"), total - seen.size()]
+	return t
 
 
 static func _esc(s) -> String:

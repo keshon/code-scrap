@@ -364,6 +364,8 @@ func _update_text() -> void:
 				continue
 			seen[k] = wanted.size()
 			wanted.append([line_px, b])
+	if not Settings.get_value("viewport.code_text"):
+		wanted = []
 	_text.update(wanted, int(Settings.get_value("text.budget")), func(node: Node2D, b: Dictionary):
 		node.position = world_to_screen(b.x, b.y)
 		node.scale = Vector2(b.w * zoom, b.h * zoom))
@@ -550,6 +552,13 @@ func frame_selected() -> void:
 		fly_to(t[0], t[1], t[2])
 
 
+## Shows a selection made elsewhere (no signal).
+func set_selection(id: int, rect: Array) -> void:
+	selection_id = id
+	selection_rect = rect
+	_overlay.queue_redraw()
+
+
 func select_node(id: int, rect: Array) -> void:
 	selection_id = id
 	selection_rect = rect
@@ -579,8 +588,9 @@ func _draw_overlay() -> void:
 	var HIT_COLOR: Color = Settings.get_value("highlight.search")
 	var hover_c: Color = Settings.get_value("highlight.hover")
 	var sel_c: Color = Settings.get_value("highlight.selection")
+	var show_hits: bool = Settings.get_value("viewport.search_hits")
 	# search: files with hits, then hit lines
-	for r in hit_files:
+	for r in (hit_files if show_hits else []):
 		var s := rect_to_screen(r)
 		if not view.intersects(s.grow(2)):
 			continue
@@ -592,19 +602,20 @@ func _draw_overlay() -> void:
 			var fade: float = 1.0 - smoothstep(60.0, 400.0, min(s.size.x, s.size.y))
 			o.draw_rect(s, Color(HIT_COLOR, 0.05 + 0.2 * fade))
 			o.draw_rect(s, Color(HIT_COLOR, 0.5 + 0.3 * fade), false, 1.0)
-	for r in hit_lines:
+	for r in (hit_lines if show_hits else []):
 		var s := rect_to_screen(r)
 		if view.intersects(s) and s.size.y >= 1.0:
 			o.draw_rect(s, Color(HIT_COLOR, 0.22))
-	if current_hit.size() == 4:
+	if current_hit.size() == 4 and show_hits:
 		var s := rect_to_screen(current_hit)
 		o.draw_rect(s.grow(1), Color(HIT_COLOR, 0.35))
 		o.draw_rect(s.grow(1), HIT_COLOR, false, 1.5)
-	_draw_arcs()
-	# labels
-	_draw_labels()
+	if Settings.get_value("viewport.arcs"):
+		_draw_arcs()
+	if Settings.get_value("viewport.labels"):
+		_draw_labels()
 	# hover + selection
-	if hover.has("rect") and int(hover.get("node", -1)) >= 0:
+	if hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover"):
 		var hr := rect_to_screen(hover.rect)
 		o.draw_rect(hr, Color(hover_c, 0.06))
 		_outline(hr, Color(hover_c, 0.7), Settings.get_value("lines.hover_width"))

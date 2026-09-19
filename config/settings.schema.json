@@ -9,7 +9,21 @@
         {"id": "ui.theme", "type": "enum", "options_from": "themes", "default": "calm", "label": "Theme", "desc": "Look of panels and controls. Themes live in config/themes."},
         {"id": "ui.scale_auto", "type": "bool", "default": true, "label": "Scale with display", "desc": "Follow the operating system's display scale (DPI)."},
         {"id": "ui.scale", "type": "float", "default": 1.0, "min": 0.75, "max": 2.5, "step": 0.05, "label": "Interface scale", "desc": "Size of all panels, controls and text. Multiplies the display scale when scaling with the display."},
+        {"id": "ui.display_panel", "type": "bool", "default": true, "label": "Display panel", "desc": "The left panel with lenses and overlays."},
         {"id": "ui.keymap", "type": "enum", "options_from": "keymaps", "default": "maya", "label": "Mouse & keys", "desc": "Navigation and shortcut scheme. Keymaps live in config/keymaps."}
+      ]
+    },
+    {
+      "id": "viewport",
+      "label": "Viewport display",
+      "settings": [
+        {"id": "viewport.labels", "type": "bool", "default": true, "label": "Labels", "desc": "Directory, file and scope names on the boxes."},
+        {"id": "viewport.code_text", "type": "bool", "default": true, "label": "Code text", "desc": "The source text printed inside files (dashes far away, letters up close)."},
+        {"id": "viewport.hover", "type": "bool", "default": true, "label": "Hover highlight", "desc": "Outline the box under the cursor."},
+        {"id": "viewport.search_hits", "type": "bool", "default": true, "label": "Search highlights", "desc": "Tint files and lines that match the current search."},
+        {"id": "viewport.arcs", "type": "bool", "default": true, "label": "Relation arcs", "desc": "Draw import and call arcs when those overlays are on."},
+        {"id": "viewport.legend", "type": "bool", "default": true, "label": "Legend", "desc": "Explain the current colors and arcs in the viewport corner."},
+        {"id": "viewport.header", "type": "bool", "default": true, "label": "Viewport header", "desc": "Breadcrumb of the selection with camera and display menus."}
       ]
     },
     {
@@ -68,6 +82,8 @@
       "id": "relations",
       "label": "Relations",
       "settings": [
+        {"id": "relations.imports", "type": "bool", "default": false, "label": "Show imports", "desc": "Arcs from the selection to what it imports and from what imports it."},
+        {"id": "relations.calls", "type": "bool", "default": false, "label": "Show calls", "desc": "Arcs to what the selected function or file calls and from its callers. Syntax-level: ambiguous names are skipped."},
         {"id": "relations.imports_out", "type": "color", "default": "#ff9e40", "label": "Imports", "desc": "Arcs from the selection to what it imports."},
         {"id": "relations.imports_in", "type": "color", "default": "#59d1ff", "label": "Imported by", "desc": "Arcs from files that import the selection."},
         {"id": "relations.calls_out", "type": "color", "default": "#cc80ff", "label": "Calls", "desc": "Arcs from the selection to what it calls."},

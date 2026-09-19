@@ -4,8 +4,7 @@ extends PanelContainer
 ## per schema group, one row per setting with a control picked by its type.
 ## Changes apply live and persist; presets load or save whole sets.
 
-var _rows := {}              # id -> {row: Control, refresh: Callable, reset: Button, text: String}
-var _groups := []            # [{box: FoldableContainer, ids: Array}]
+var _groups := []            # [{box: FoldableContainer, rows: Array[SettingRow]}]
 var _filter: LineEdit
 var _preset_opt: OptionButton
 var _preset_ids := []
@@ -100,18 +99,15 @@ func _ready() -> void:
 		box.add_theme_constant_override("separation", 10)
 		fc.add_child(box)
 		_body.add_child(fc)
-		var ids := []
+		var rows := []
 		for s in g.settings:
-			box.add_child(_make_row(s))
-			ids.append(s.id)
-		_groups.append({"box": fc, "ids": ids})
+			var row := SettingRow.new(s.id)
+			box.add_child(row)
+			rows.append(row)
+		_groups.append({"box": fc, "rows": rows})
 
 	_refresh_presets()
-	Settings.changed.connect(func(id, _v): _refresh(id))
-	Settings.reloaded.connect(func():
-		for id in _rows:
-			_refresh(id)
-		_refresh_presets())
+	Settings.reloaded.connect(_refresh_presets)
 	Style.theme_changed.connect(func(): _filter.right_icon = Style.icon("search"))
 	gui_input.connect(func(ev):
 		if ev is InputEventMouseButton:
@@ -152,117 +148,15 @@ func _refresh_presets() -> void:
 		_preset_ids.append(p.id)
 
 
-# ------------------------------------------------------------------ rows
-
-func _make_row(def: Dictionary) -> Control:
-	var id: String = def.id
-	var row := VBoxContainer.new()
-	row.add_theme_constant_override("separation", 2)
-	var line := HBoxContainer.new()
-	row.add_child(line)
-	var label := Label.new()
-	label.text = def.label
-	label.tooltip_text = "%s\n%s" % [def.get("desc", ""), id]
-	label.mouse_filter = Control.MOUSE_FILTER_PASS
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(label)
-
-	var refresh: Callable
-	match def.type:
-		"bool":
-			var cb := CheckButton.new()
-			cb.focus_mode = Control.FOCUS_NONE
-			cb.toggled.connect(func(on): Settings.set_value(id, on))
-			line.add_child(cb)
-			refresh = func(v): cb.set_pressed_no_signal(v)
-		"int", "float":
-			var sl := HSlider.new()
-			sl.custom_minimum_size = Vector2(120, 0)
-			sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			sl.focus_mode = Control.FOCUS_NONE
-			var sp := SpinBox.new()
-			sp.custom_minimum_size = Vector2(84, 0)
-			for r in [sl, sp]:
-				r.min_value = def.get("min", 0)
-				r.max_value = def.get("max", 100)
-				r.step = def.get("step", 1 if def.type == "int" else 0.01)
-			sl.value_changed.connect(func(v): Settings.set_value(id, v))
-			sp.value_changed.connect(func(v): Settings.set_value(id, v))
-			line.add_child(sl)
-			line.add_child(sp)
-			refresh = func(v):
-				sl.set_value_no_signal(v)
-				sp.set_value_no_signal(v)
-		"color":
-			var cp := ColorPickerButton.new()
-			cp.custom_minimum_size = Vector2(64, 24)
-			cp.edit_alpha = false
-			cp.focus_mode = Control.FOCUS_NONE
-			cp.color_changed.connect(func(c): Settings.set_value(id, c))
-			line.add_child(cp)
-			refresh = func(v): cp.color = v
-		"enum":
-			var ob := OptionButton.new()
-			ob.custom_minimum_size = Vector2(160, 0)
-			ob.focus_mode = Control.FOCUS_NONE
-			var opts := Settings.options(id)
-			for i in opts.size():
-				ob.add_item(opts[i].name)
-				ob.set_item_tooltip(i, opts[i].desc)
-			ob.item_selected.connect(func(i): Settings.set_value(id, opts[i].id))
-			line.add_child(ob)
-			refresh = func(v):
-				for i in opts.size():
-					if opts[i].id == v:
-						ob.select(i)
-		_:
-			var le := LineEdit.new()
-			le.custom_minimum_size = Vector2(160, 0)
-			le.text_submitted.connect(func(t): Settings.set_value(id, t))
-			le.focus_exited.connect(func(): Settings.set_value(id, le.text))
-			line.add_child(le)
-			refresh = func(v): le.text = str(v)
-
-	var reset := Button.new()
-	reset.theme_type_variation = "FlatButton"
-	reset.icon = Style.icon("reset")
-	reset.tooltip_text = "Back to the preset value"
-	reset.focus_mode = Control.FOCUS_NONE
-	reset.pressed.connect(func(): Settings.reset(id))
-	line.add_child(reset)
-
-	if def.get("desc", "") != "":
-		var d := Label.new()
-		d.theme_type_variation = "SmallLabel"
-		d.text = def.desc
-		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		d.custom_minimum_size = Vector2(200, 0)
-		row.add_child(d)
-
-	_rows[id] = {"row": row, "refresh": refresh, "reset": reset,
-		"text": ("%s %s %s" % [def.label, def.get("desc", ""), id]).to_lower()}
-	_refresh(id)
-	return row
-
-
-func _refresh(id: String) -> void:
-	var r: Dictionary = _rows.get(id, {})
-	if r.is_empty():
-		return
-	r.refresh.call(Settings.get_value(id))
-	# keep the column steady: hide the reset glyph without collapsing it
-	r.reset.modulate.a = 1.0 if Settings.is_overridden(id) else 0.0
-	r.reset.disabled = not Settings.is_overridden(id)
-
+# ------------------------------------------------------------------ filter
 
 func _apply_filter() -> void:
 	var q := _filter.text.strip_edges().to_lower()
 	for g in _groups:
 		var any := false
-		for id in g.ids:
-			var r: Dictionary = _rows[id]
-			var show: bool = q == "" or r.text.contains(q)
-			r.row.visible = show
+		for r: SettingRow in g.rows:
+			var show: bool = q == "" or r.search_text.contains(q)
+			r.visible = show
 			any = any or show
 		g.box.visible = any
 		if q != "" and any:

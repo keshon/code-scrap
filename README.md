@@ -73,7 +73,18 @@ The *Classic* keymap keeps the old scheme: left drag pans, right drag orbits, `H
 
 Every tunable (UI scale and theme, camera, labels, code text, highlight and arc colors, budgets, importance weights, git window) is described in `config/settings.schema.json`; the settings panel is generated from it. Changes apply live and are saved to the Godot user folder. **Presets** (`config/presets/*.json`, plus your own via *Save as…*) load whole sets of values. Themes are token files in `config/themes/`. The viewer–server protocol is documented in [docs/protocol.md](docs/protocol.md).
 
-### Lenses (toolbar)
+### Layout
+
+| Zone | What's there |
+|---|---|
+| Top bar | repository (open, recent), 2D / 3D, settings preset, **search field** (symbol prefix; start with `>` for commands), settings |
+| Left: Display panel | lenses (height, color, importance weights, git window) with what each one means, overlays (imports, calls, labels, code text) |
+| Viewport header | breadcrumb of the selection (click to go up), Camera menu, ☰ display toggles |
+| Legend (bottom right) | what colors and arcs mean; click an area to frame it |
+| Right panel | Inspector (with clickable imports / callers lists) and search results |
+| Status bar | server, index progress, hover, keymap hints, fps |
+
+### Lenses (Display panel)
 
 Every lens is optional; the defaults show the plain map.
 

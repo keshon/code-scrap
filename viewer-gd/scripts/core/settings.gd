@@ -12,11 +12,14 @@ signal reloaded  # a preset was loaded: treat every value as changed
 
 const USER_FILE := "user://settings.json"
 const USER_PRESETS := "user://presets"
+const RECENT_FILE := "user://recent.json"
+const RECENT_MAX := 10
 
 var config_dir := ""
 var groups: Array = []      # schema groups, in order
 var defs := {}              # id -> setting definition
 var preset := "default"
+var persist := true         # false: changes live only in memory (scripted runs)
 
 var _preset_values := {}    # id -> raw value from the active preset
 var _overrides := {}        # id -> raw value set by the user
@@ -212,6 +215,24 @@ func save_preset(name: String, desc := "") -> String:
 	return preset
 
 
+# ------------------------------------------------------------------ recent folders
+
+## Recently opened repositories, newest first.
+func recent() -> Array:
+	return read_json(RECENT_FILE).get("paths", [])
+
+
+func add_recent(p: String) -> void:
+	if not persist:
+		return
+	p = p.replace("\\", "/")
+	var list := recent().filter(func(q): return q.to_lower() != p.to_lower())
+	list.push_front(p)
+	var f := FileAccess.open(RECENT_FILE, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({"paths": list.slice(0, RECENT_MAX)}, "  "))
+
+
 # ------------------------------------------------------------------ persistence
 
 func _load_user() -> void:
@@ -229,6 +250,8 @@ func _load_user() -> void:
 
 
 func _save_user() -> void:
+	if not persist:
+		return
 	var f := FileAccess.open(USER_FILE, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify({"preset": preset, "values": _overrides}, "  "))

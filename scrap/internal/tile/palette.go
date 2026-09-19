@@ -32,6 +32,24 @@ var (
 	grey    = [3]float32{0.50, 0.52, 0.56}
 )
 
+// AreaColor is the outline color of an area hue (for legends).
+func AreaColor(hue uint8) [3]float32 {
+	if hue == codemap.HueNeutral {
+		return neutral
+	}
+	return hues[hue%16]
+}
+
+// HeatRamp samples the metric color ramp at n evenly spaced points (for
+// legends).
+func HeatRamp(n int) [][3]float32 {
+	out := make([][3]float32, n)
+	for i := range out {
+		out[i] = heatColor(float32(i) / float32(max(n-1, 1)))
+	}
+	return out
+}
+
 // heatColor maps 0..1 to a perceptual cold→hot ramp (blue, teal, yellow,
 // orange, red), readable as outlines on a dark background.
 func heatColor(t float32) [3]float32 {

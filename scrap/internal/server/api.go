@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/binary"
 	"math"
+	"slices"
 	"strconv"
 	"time"
 
@@ -14,7 +15,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 2
+const Protocol = 3
 
 func hello(st *state) map[string]any {
 	m := st.m
@@ -33,6 +34,8 @@ func hello(st *state) map[string]any {
 		"view":     m.View,
 		"git":      m.GitTime != 0,
 		"metrics":  codemap.Metrics,
+		"lenses":   map[string]any{"height": codemap.HeightLenses(), "color": codemap.ColorLenses()},
+		"legend":   legend(m),
 		"text": map[string]any{
 			"font":      st.renderer.Atlas.Font,
 			"colChars":  codemap.ColChars,
@@ -40,6 +43,24 @@ func hello(st *state) map[string]any {
 			"texW":      tile.BlockChars,
 		},
 	}
+}
+
+// legend describes what the colors mean under the current view: the areas
+// and their hues, or the metric ramp with its value quantiles.
+func legend(m *codemap.Map) map[string]any {
+	if m.View.Color != "" && m.View.Color != codemap.ColorArea {
+		return map[string]any{
+			"kind":      "metric",
+			"ramp":      tile.HeatRamp(9),
+			"quantiles": m.Quantiles(codemap.Metric(m.View.Color)),
+		}
+	}
+	areas := m.Areas()
+	list := make([]map[string]any, 0, min(len(areas), 16))
+	for _, a := range areas[:min(len(areas), 16)] {
+		list = append(list, map[string]any{"node": a.Node, "name": a.Name, "color": tile.AreaColor(a.Hue), "lines": a.Lines})
+	}
+	return map[string]any{"kind": "area", "areas": list, "more": max(len(areas)-16, 0)}
 }
 
 var classNames = []struct {
@@ -70,6 +91,7 @@ func nodeInfo(st *state, id int32) map[string]any {
 		"rect":        rect(n.Rect),
 		"top":         n.Top,
 		"line":        1,
+		"ancestors":   ancestors(m, id),
 	}
 	if n.Kind != codemap.KindDir {
 		f := &m.Files[n.File]
@@ -110,6 +132,16 @@ func nodeInfo(st *state, id int32) map[string]any {
 	return out
 }
 
+// ancestors lists [id, name] from the root down to the node's parent.
+func ancestors(m *codemap.Map, id int32) [][2]any {
+	var out [][2]any
+	for p := m.Nodes[id].Parent; p >= 0; p = m.Nodes[p].Parent {
+		out = append(out, [2]any{p, m.Nodes[p].Name})
+	}
+	slices.Reverse(out)
+	return out
+}
+
 func pick(st *state, x, y, scale float64) map[string]any {
 	id, line := st.m.Pick(x, y, scale, 3)
 	out := map[string]any{"op": "pick", "node": id, "line": line}
@@ -144,13 +176,19 @@ func relations(st *state, op string, id int32) map[string]any {
 		out, in, outTotal, inTotal = m.DepsOf(id, 2000)
 	}
 	nodes := map[string][5]float64{}
+	names := map[string]string{}
 	pair := func(es []codemap.Edge) [][2]int32 {
 		res := make([][2]int32, len(es))
 		for i, e := range es {
 			res[i] = [2]int32{e.From, e.To}
 			for _, n := range [2]int32{e.From, e.To} {
 				r := m.Nodes[n].Rect
-				nodes[strconv.Itoa(int(n))] = [5]float64{r.X, r.Y, r.W, r.H, m.Nodes[n].Top}
+				k := strconv.Itoa(int(n))
+				nodes[k] = [5]float64{r.X, r.Y, r.W, r.H, m.Nodes[n].Top}
+				names[k] = m.Path(n)
+				if m.Nodes[n].Kind == codemap.KindScope {
+					names[k] = m.Nodes[n].Name + " · " + m.Files[m.Nodes[n].File].Path
+				}
 			}
 		}
 		return res
@@ -158,7 +196,7 @@ func relations(st *state, op string, id int32) map[string]any {
 	return map[string]any{
 		"op": op, "node": id,
 		"out": pair(out), "in": pair(in), "outTotal": outTotal, "inTotal": inTotal,
-		"nodes": nodes,
+		"nodes": nodes, "names": names,
 	}
 }
 

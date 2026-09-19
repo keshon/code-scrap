@@ -7,7 +7,9 @@ var _dot: ColorRect
 var _progress: Label
 var _status: Label
 var _hints: Label
+var _fps: Label
 var _connected := false
+var _acc := 0.0
 
 
 func _ready() -> void:
@@ -33,10 +35,23 @@ func _ready() -> void:
 	hb.add_child(_status)
 	_hints = _label()
 	hb.add_child(_hints)
+	hb.add_child(VSeparator.new())
+	_fps = _label()
+	_fps.custom_minimum_size = Vector2(52, 0)
+	_fps.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_fps.tooltip_text = "Frames per second (F12 for details)"
+	hb.add_child(_fps)
 	_hints.text = Keymap.hints()
 	Keymap.keymap_changed.connect(func(): _hints.text = Keymap.hints())
 	Style.theme_changed.connect(func(): set_connected(_connected))
 	set_connected(false)
+
+
+func _process(dt: float) -> void:
+	_acc += dt
+	if _acc >= 0.5:
+		_acc = 0.0
+		_fps.text = "%d fps" % Engine.get_frames_per_second()
 
 
 func set_connected(ok: bool) -> void:

@@ -1,6 +1,6 @@
 # Polish plan
 
-Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1–2 done, theme A (Calm) first
+Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1–3 done, theme A (Calm) first
 
 This plan turns the prototype into a tool: a data-driven core, a real UI shell, and a viewport that reads well. It covers the 20 review points from 2026-09-19. The phases are ordered so that each one builds on the previous: first the foundations everything else plugs into, then fixes, then the shell, then viewport polish.
 
@@ -98,6 +98,22 @@ Fix: edge distance measured in real screen pixels with pixel-center alignment. W
 ---
 
 ## Phase 3 — UI shell (points 4, 5, 6, 14, 15)
+
+> **Done (2026-09-19).**
+> - **Zones as sketched below:**
+>   - top bar: repository menu with recent folders, 2D|3D, preset, search/command field, settings;
+>   - left **Display panel**: lenses with descriptions, importance weights, git window, overlays;
+>   - **viewport header**: collapsing, clickable breadcrumb, Camera menu, ☰ display toggles;
+>   - **legend** (bottom right): area swatches (click to frame) or metric ramp with quantiles and unit, relation and search colors;
+>   - right panel: Inspector with clickable relation lists, Search results;
+>   - status bar with fps.
+> - **Lens descriptors** come from the server (protocol v3), along with legend data and breadcrumb ancestors.
+> - **Search:**
+>   - file rows select files; a click selects, and double-click or Enter flies;
+>   - a "Fly" toggle;
+>   - `>` switches to command mode (frame, toggles, theme, keymap…).
+> - **Also:** every viewport display option is a setting, `SettingRow` is shared by the settings and Display panels, and scripted runs no longer write to the user's settings.
+> - **Not done:** the minimap (Phase 5 has it) and panel docking/resizing beyond split containers.
 
 ### 3.1 Zones, in the Modo / Softimage tradition (point 6)
 ```

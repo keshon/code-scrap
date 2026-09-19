@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **2** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **3** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 3 | `hello.lenses` (lens descriptors) and `hello.legend`. `node.ancestors`. Relation replies carry `names`. |
 | 2 | Text blocks carry a content key (`u32 key`) in tile frames and text frames. `hello.protocol` added. `options` accepts `weights` and `gitSince`. |
 | 1 | Initial (unversioned). |
 
@@ -49,18 +50,23 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 2, "gen": 3,
+  "op": "hello", "protocol": 3, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,
   "stats": {"Files": 18303, "Lines": 1849427, "...": "..."},
   "view": {"height": "depth", "color": "area", "importance": false, "weights": {}},
   "metrics": ["lines", "complexity", "functions", "churn", "age", "authors"],
+  "lenses": {"height": [Lens, …], "color": [Lens, …]},
+  "legend": {"kind": "area", "areas": [{"node", "name", "color": [r, g, b], "lines"}, …], "more": 3},
   "text": {"font": "consola.ttf", "colChars": 100, "blockRows": 4096, "texW": 128}
 }
 ```
 
 The server sends it on connect and after every rebuild.
+
+- **Lens:** `{id, short, long, desc, unit, high, needsGit}`. Viewers build their lens menus, descriptions and legend units from these, so a new metric needs no viewer change.
+- **Legend:** under a metric color lens it is `{"kind": "metric", "ramp": [[r, g, b] × 9], "quantiles": [p0, p25, p50, p75, p100]}`, with quantiles in the lens unit (null when no file has a value). Otherwise it lists up to 16 top-level areas, biggest first; `more` counts the rest.
 
 ### `progress`
 
@@ -77,6 +83,8 @@ The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lin
 - scopes: `scope` (the kind);
 - function scopes: `metrics` (`complexity`, `params`, `nesting`, `lines`).
 
+`ancestors: [[id, name], …]` runs from the root down to the parent (for breadcrumbs).
+
 ### `pick`
 
 `node` (−1 = nothing) and `line` (file line under the point, or −1). When a node was hit, it also carries `name`, `kind`, `path`, `rect`, `top`, and `lineRect` or `t`.
@@ -90,7 +98,7 @@ The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lin
 
 ### Relations (`edges`, `calls`)
 
-`node`, `out: [[from, to], …]`, `in: [[from, to], …]`, `outTotal`, `inTotal` and `nodes: {"id": [x, y, w, h, top]}`. `nodes` gives the geometry of every endpoint, so arcs draw without further requests. Each list is capped at 2000 edges.
+`node`, `out: [[from, to], …]`, `in: [[from, to], …]`, `outTotal`, `inTotal` `nodes: {"id": [x, y, w, h, top]}` and `names: {"id": "path" or "name · path"}`. `nodes` gives the geometry of every endpoint, so arcs draw without further requests. Each list is capped at 2000 edges.
 
 ## Binary frames
 

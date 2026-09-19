@@ -223,3 +223,23 @@ func TestSearchFindsDeclarations(t *testing.T) {
 		}
 	}
 }
+
+func TestLegendData(t *testing.T) {
+	m := fixture(t, false)
+	areas := m.Areas()
+	if len(areas) < 4 || areas[0].Name != "src" {
+		t.Errorf("areas should list top-level folders, src first; got %+v", areas)
+	}
+	q := m.Quantiles(MetricLines)
+	if len(q) != 5 || q[0] > q[4] || q[0] <= 0 {
+		t.Errorf("line quantiles %v", q)
+	}
+	if m.Quantiles(MetricChurn) != nil {
+		t.Error("no git: churn has no quantiles")
+	}
+	for _, l := range append(HeightLenses(), ColorLenses()...) {
+		if l.ID == "" || l.Short == "" || l.Long == "" || l.Desc == "" {
+			t.Errorf("incomplete lens %+v", l)
+		}
+	}
+}

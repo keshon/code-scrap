@@ -13,6 +13,7 @@ extends Node
 ##   --rel=imports,calls   turn relation arcs on (use with --search to select)
 ##   --settings=1      open the settings panel
 ##   --hud=1           show the diagnostics overlay
+##   --theme=<id>      use this theme for the run (nothing is saved)
 
 var shell: Node   # main.gd
 var args := {}
@@ -21,10 +22,13 @@ var args := {}
 func _init(s: Node, a: Dictionary) -> void:
 	shell = s
 	args = a
+	Settings.persist = false  # scripted runs never touch the user's settings
 
 
 func _ready() -> void:
 	var client: ScrapClient = shell.client
+	if args.has("theme"):
+		Settings.set_value("ui.theme", args.theme)
 	if args.has("search"):
 		shell.search.auto_step_first = true
 		client.hello.connect(func(_i):
@@ -36,8 +40,8 @@ func _ready() -> void:
 	if args.has("lens"):
 		_apply_lens(args.lens)
 	if args.has("rel"):
-		shell.toolbar.imports.button_pressed = "imports" in args.rel
-		shell.toolbar.calls.button_pressed = "calls" in args.rel
+		Settings.set_value("relations.imports", "imports" in args.rel)
+		Settings.set_value("relations.calls", "calls" in args.rel)
 	if args.has("settings"):
 		shell.settings_panel.show()
 	if args.has("hud"):
@@ -56,7 +60,7 @@ func _apply_lens(spec: String) -> void:
 		if shell.hello_info.get("git", false):
 			break
 		await get_tree().create_timer(0.1).timeout
-	shell.toolbar.apply_lens_spec(spec)
+	shell.display.apply_lens_spec(spec)
 
 
 func _enter_3d() -> void:
