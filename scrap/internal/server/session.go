@@ -33,20 +33,21 @@ func newSession(ctx context.Context, s *Server, c *websocket.Conn) *session {
 }
 
 type request struct {
-	ID    int64      `json:"id"`
-	Op    string     `json:"op"`
-	Keys  [][3]int   `json:"keys"`
-	Gen   uint32     `json:"gen"`
-	Dim   int        `json:"dim"`
-	Ray   [6]float64 `json:"ray"` // origin xyz, direction xyz (world units, Y up)
-	Node  int32      `json:"node"`
-	X     float64    `json:"x"`
-	Y     float64    `json:"y"`
-	Scale float64    `json:"scale"`
-	Q     string     `json:"q"`
-	Page  int        `json:"page"`
-	Size  int        `json:"size"`
-	Path  string     `json:"path"`
+	ID    int64        `json:"id"`
+	Op    string       `json:"op"`
+	Keys  [][3]int     `json:"keys"`
+	Gen   uint32       `json:"gen"`
+	Dim   int          `json:"dim"`
+	Ray   [6]float64   `json:"ray"` // origin xyz, direction xyz (world units, Y up)
+	Pts   [][2]float64 `json:"pts"` // ground points for "heights"
+	Node  int32        `json:"node"`
+	X     float64      `json:"x"`
+	Y     float64      `json:"y"`
+	Scale float64      `json:"scale"`
+	Q     string       `json:"q"`
+	Page  int          `json:"page"`
+	Size  int          `json:"size"`
+	Path  string       `json:"path"`
 }
 
 func (ss *session) run(ctx context.Context) {
@@ -154,6 +155,14 @@ func (ss *session) handle(req request) {
 	case "pickRay":
 		if st != nil {
 			resp = pickRay(st, req.Ray)
+		}
+	case "heights":
+		if st != nil {
+			hs := make([]float64, len(req.Pts))
+			for i, p := range req.Pts {
+				hs[i] = st.m.HeightAt(p[0], p[1])
+			}
+			resp = map[string]any{"op": "heights", "h": hs}
 		}
 	case "search":
 		if st != nil {

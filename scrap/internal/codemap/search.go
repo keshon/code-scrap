@@ -147,3 +147,28 @@ func rayBox(ox, oy, oz, dx, dy, dz float64, r Rect, top float64) (float64, bool)
 	}
 	return t0, true
 }
+
+// HeightAt returns the roof height of the topmost dir or file box covering a
+// ground point (0 outside the map). The camera uses it to stay above roofs.
+func (m *Map) HeightAt(x, y float64) float64 {
+	if len(m.Nodes) == 0 || !m.Nodes[0].Rect.Contains(x, y) {
+		return 0
+	}
+	id := int32(0)
+	for {
+		n := &m.Nodes[id]
+		next := int32(-1)
+		if n.Kind == KindDir {
+			for _, c := range n.Children {
+				if m.Nodes[c].Rect.Contains(x, y) {
+					next = c
+					break
+				}
+			}
+		}
+		if next < 0 {
+			return n.Top
+		}
+		id = next
+	}
+}

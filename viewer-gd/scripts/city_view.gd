@@ -24,8 +24,9 @@ const MAX_PITCH := 1.56
 var client: ScrapClient
 
 # camera (world units, float64)
-var tx := 0.5                # target on the ground
+var tx := 0.5                # orbit target: ground position…
 var ty := 0.3
+var th := 0.0                # …and height (it rides on the roofs)
 var dist := 1.0              # camera distance from the target
 var yaw := 0.0
 var pitch := 0.95
@@ -60,6 +61,11 @@ var _last_mouse := Vector2.ZERO
 var _pick_pending := false
 var _pick_at := 0.0
 var hover := {}
+var _hover_ray := []         # world ray of the pending pick: ox, oy, oz, dx, dy, dz
+var _floor_cam := 0.0        # roof height under the camera (from the server)
+var _floor_target := 0.0     # roof height under the target
+var _heights_at := 0.0
+var _heights_req := -1
 var selection := {}          # {rect, top}
 var hit_files := []          # [x, y, w, h, top]
 var current_hit := {}        # {rect, top}
@@ -175,6 +181,7 @@ func _dist_for_zoom(zoom: float) -> float:
 func enter(cx: float, cy: float, zoom: float) -> void:
 	tx = cx
 	ty = cy
+	th = 0.0
 	dist = _dist_for_zoom(zoom)
 	pitch = MAX_PITCH
 	_goal = {}
@@ -194,28 +201,29 @@ func _nearest_north(a: float) -> float:
 
 func home() -> void:
 	var r: Array = world
-	_fly_rect(r)
+	_fly_rect(r, 0.0)
 
 
-func _fly_rect(r: Array, margin := 1.25) -> void:
+func _fly_rect(r: Array, top: float, margin := 1.25) -> void:
 	var w: float = max(r[2], r[3] * size.x / max(size.y, 1.0)) * margin
 	var d := _dist_for_zoom(size.x / w)
 	_goal = {}
-	_tween = {"from": {"tx": tx, "ty": ty, "dist": dist, "pitch": pitch, "yaw": yaw},
-		"to": {"tx": r[0] + r[2] * 0.5, "ty": r[1] + r[3] * 0.5, "dist": d, "pitch": pitch, "yaw": yaw},
+	_tween = {"from": {"tx": tx, "ty": ty, "th": th, "dist": dist, "pitch": pitch, "yaw": yaw},
+		"to": {"tx": r[0] + r[2] * 0.5, "ty": r[1] + r[3] * 0.5, "th": top, "dist": d, "pitch": pitch, "yaw": yaw},
 		"t": 0.0, "dur": 0.9, "arc": true}
 
 
-func focus_rect(r: Array, _top: float) -> void:
-	_fly_rect(r, 1.6)
+func focus_rect(r: Array, top: float) -> void:
+	_fly_rect(r, top, 1.6)
 
 
-## Flies to a text line so it reads at about line_px on a steep camera.
-func focus_line(r: Array, line_px := 16.0) -> void:
+## Flies to a text line (on a roof at height top) so it reads at about
+## line_px on a steep camera.
+func focus_line(r: Array, top: float, line_px := 16.0) -> void:
 	var d := _dist_for_zoom(line_px / max(r[3], 1e-12))
 	_goal = {}
-	_tween = {"from": {"tx": tx, "ty": ty, "dist": dist, "pitch": pitch, "yaw": yaw},
-		"to": {"tx": r[0] + r[2] * 0.5, "ty": r[1] + r[3] * 0.5, "dist": d, "pitch": max(pitch, 1.15), "yaw": yaw},
+	_tween = {"from": {"tx": tx, "ty": ty, "th": th, "dist": dist, "pitch": pitch, "yaw": yaw},
+		"to": {"tx": r[0] + r[2] * 0.5, "ty": r[1] + r[3] * 0.5, "th": top, "dist": d, "pitch": max(pitch, 1.15), "yaw": yaw},
 		"t": 0.0, "dur": 1.1, "arc": true}
 
 
@@ -261,7 +269,7 @@ func _step(dt: float) -> void:
 
 func _goal_set(key: String, value: float) -> void:
 	if _goal.is_empty():
-		_goal = {"tx": tx, "ty": ty, "dist": dist, "yaw": yaw, "pitch": pitch}
+		_goal = {"tx": tx, "ty": ty, "th": th, "dist": dist, "yaw": yaw, "pitch": pitch}
 	_goal[key] = value
 
 
@@ -276,9 +284,17 @@ func _update_camera() -> void:
 		_origin = [tx, ty]
 	var cp := cos(pitch)
 	var offset := Vector3(sin(yaw) * cp, sin(pitch), cos(yaw) * cp) * dist * S
-	var target := Vector3((tx - _origin[0]) * S, 0.0, (ty - _origin[1]) * S)
-	_cam.position = target + offset
-	_cam.look_at(target, Vector3.UP if pitch < MAX_PITCH - 0.001 else Vector3(-sin(yaw), 0, -cos(yaw)))
+	var target := Vector3((tx - _origin[0]) * S, th * S, (ty - _origin[1]) * S)
+	var pos := target + offset
+	# stay above whatever stands under the camera
+	var min_y := (_floor_cam + dist * 0.08) * S
+	if pos.y < min_y:
+		pos.y = min_y
+	_cam.position = pos
+	var up := Vector3.UP
+	if abs((target - pos).normalized().dot(Vector3.UP)) > 0.999:
+		up = Vector3(-sin(yaw), 0, -cos(yaw))
+	_cam.look_at(target, up)
 	var r := dist * S
 	_cam.near = max(r * 0.002, 1e-6)
 	_cam.far = r * 60.0 + 10.0
@@ -291,6 +307,7 @@ func _process(dt: float) -> void:
 		return
 	_frame += 1
 	_step(dt)
+	_follow_floor(dt)
 	if _pick_pending and Time.get_ticks_msec() / 1000.0 >= _pick_at:
 		_pick_pending = false
 		_send_pick()
@@ -299,6 +316,19 @@ func _process(dt: float) -> void:
 		_update_camera()
 		_update_tiles()
 		_overlay.queue_redraw()
+
+
+## Asks the server for the roof heights under the camera and the target
+## (throttled), and lets the orbit target settle onto the roof below it.
+func _follow_floor(dt: float) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if client != null and gen >= 0 and now - _heights_at > 0.08:
+		_heights_at = now
+		var cam_w := [_cam.global_position.x / S + _origin[0], _cam.global_position.z / S + _origin[1]]
+		_heights_req = client.request("heights", {"pts": [cam_w, [tx, ty]]})
+	if _tween.is_empty() and _pressed < 0 and abs(th - _floor_target) > dist * 1e-4:
+		th = lerp(th, _floor_target, 1.0 - exp(-dt * 8.0))
+		_dirty = true
 
 
 # ---------------------------------------------------------------- tiles
@@ -457,13 +487,16 @@ func _on_tile(t: Dictionary) -> void:
 
 # ---------------------------------------------------------------- input
 
-func _ground_point(p: Vector2) -> Array:
-	## world (x, y) under a screen point on the ground plane, or [] if none
+func _ground_point(p: Vector2, h := NAN) -> Array:
+	## world (x, y) where the ray under a screen point meets the horizontal
+	## plane at height h (default: the target's height), or [] if it doesn't
+	if is_nan(h):
+		h = th
 	var o := _cam.project_ray_origin(p)
 	var n := _cam.project_ray_normal(p)
 	if n.y > -1e-6:
 		return []
-	var t := -o.y / n.y
+	var t := (h * S - o.y) / n.y
 	var hit := o + n * t
 	return [hit.x / S + _origin[0], hit.z / S + _origin[1]]
 
@@ -476,14 +509,23 @@ func _gui_input(ev: InputEvent) -> void:
 			if mb.factor > 0.0:
 				f = pow(f, mb.factor)
 			_tween = {}
-			var gp := _ground_point(mb.position)
+			# the point to zoom toward: the roof/wall under the cursor if the
+			# last pick is fresh, else the plane at the target's height
+			var p := []
+			if hover.has("hit") and _last_mouse.distance_to(mb.position) < 3.0:
+				p = hover.hit
+			else:
+				var gp := _ground_point(mb.position)
+				if not gp.is_empty():
+					p = [gp[0], th, gp[1]]
 			var d0 := _goal_get("dist")
 			var d1: float = clamp(d0 * f, 1e-9, 20.0)
 			_goal_set("dist", d1)
-			if not gp.is_empty():
-				# zoom toward the point under the cursor
-				_goal_set("tx", gp[0] + (_goal_get("tx") - gp[0]) * d1 / d0)
-				_goal_set("ty", gp[1] + (_goal_get("ty") - gp[1]) * d1 / d0)
+			if not p.is_empty():
+				var k := d1 / d0
+				_goal_set("tx", p[0] + (_goal_get("tx") - p[0]) * k)
+				_goal_set("th", p[1] + (_goal_get("th") - p[1]) * k)
+				_goal_set("ty", p[2] + (_goal_get("ty") - p[2]) * k)
 			accept_event()
 		elif mb.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT]:
 			if mb.pressed:
@@ -533,11 +575,26 @@ func _send_pick() -> void:
 	var o := _cam.project_ray_origin(_last_mouse)
 	var n := _cam.project_ray_normal(_last_mouse)
 	var ray := [o.x / S + _origin[0], o.y / S, o.z / S + _origin[1], n.x, n.y, n.z]
+	_hover_ray = ray
 	client.request("pickRay", {"ray": ray})
 
 
-func _on_reply(_id: int, data: Dictionary) -> void:
-	if visible and data.get("op") == "pick":
+func _on_reply(id: int, data: Dictionary) -> void:
+	if not visible:
+		return
+	if data.get("op") == "heights" and id == _heights_req:
+		var h: Array = data.h
+		var was := _floor_cam
+		_floor_cam = h[0]
+		_floor_target = h[1]
+		if _floor_cam > was:
+			_dirty = true
+		return
+	if data.get("op") == "pick":
+		if data.has("t") and _hover_ray.size() == 6:
+			var r := _hover_ray
+			var t: float = data.t
+			data["hit"] = [r[0] + r[3] * t, r[1] + r[4] * t, r[2] + r[5] * t]
 		hover = data
 		hovered.emit(data)
 		_overlay.queue_redraw()

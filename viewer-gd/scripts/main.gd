@@ -9,7 +9,7 @@ extends Control
 ##   --wait=<sec>      (default 4)
 ##   --search=<q>      run a search once connected and step to the first hit
 ##   --focus=<substr>  fly to the first search hit's file instead of the line
-##   --view=3d         switch to the 3D city once connected (--yaw, --pitch, --dist)
+##   --view=3d         switch to the 3D city once connected (--yaw, --pitch, --dist, --wheel=N)
 
 var client: ScrapClient
 var map: MapView
@@ -468,7 +468,7 @@ func _go_to_hit(i: int) -> void:
 	if is_3d():
 		city.current_hit = {"rect": h.rect, "top": float(h.top)}
 		city.select(int(h.node), h.rect, float(h.top))
-		city.focus_line(h.rect, 16.0)
+		city.focus_line(h.rect, float(h.top), 16.0)
 		return
 	map.current_hit = h.rect
 	map.select_node(int(h.node), h.rect)
@@ -514,6 +514,21 @@ func _enter_3d_when_ready() -> void:
 		city._tween.to.pitch = float(_args.pitch)
 	if _args.has("dist"):
 		city._tween.to.dist = city.dist * float(_args.dist)
+	if _args.has("wheel"):
+		# simulate zooming in at the view center, one notch at a time
+		await get_tree().create_timer(1.2).timeout
+		var c := city.size * 0.5
+		for i in int(_args.wheel):
+			var mm := InputEventMouseMotion.new()
+			mm.position = c
+			city._gui_input(mm)
+			await get_tree().create_timer(0.15).timeout
+			var wb := InputEventMouseButton.new()
+			wb.button_index = MOUSE_BUTTON_WHEEL_UP
+			wb.pressed = true
+			wb.position = c
+			city._gui_input(wb)
+			await get_tree().create_timer(0.1).timeout
 
 func _automate() -> void:
 	var wait := float(_args.get("wait", "4"))
