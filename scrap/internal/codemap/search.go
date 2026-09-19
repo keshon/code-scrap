@@ -2,6 +2,7 @@ package codemap
 
 import (
 	"cmp"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -97,4 +98,52 @@ func (m *Map) Pick(x, y, pxPerUnit, minPx float64) (int32, int32) {
 		}
 		id = next
 	}
+}
+
+// PickRay returns the nearest dir or file box hit by a ray (world units, the
+// map lies in the X/Z plane with heights along Y) and the ray parameter of
+// the hit. Boxes span [0, Top] vertically.
+func (m *Map) PickRay(ox, oy, oz, dx, dy, dz float64) (int32, float64) {
+	best, bestT := int32(-1), math.Inf(1)
+	var visit func(id int32)
+	visit = func(id int32) {
+		n := &m.Nodes[id]
+		r := n.Rect
+		// subtree bounds first; skip if it can't beat the current hit
+		if t, ok := rayBox(ox, oy, oz, dx, dy, dz, r, n.MaxTop); !ok || t > bestT {
+			return
+		}
+		if id != 0 {
+			if t, ok := rayBox(ox, oy, oz, dx, dy, dz, r, n.Top); ok && t <= bestT {
+				best, bestT = id, t
+			}
+		}
+		if n.Kind == KindDir {
+			for _, c := range n.Children {
+				visit(c)
+			}
+		}
+	}
+	visit(0)
+	return best, bestT
+}
+
+// rayBox intersects a ray with the box r × [0, top] (slab method).
+func rayBox(ox, oy, oz, dx, dy, dz float64, r Rect, top float64) (float64, bool) {
+	t0, t1 := 0.0, math.Inf(1)
+	slab := func(o, d, lo, hi float64) bool {
+		if math.Abs(d) < 1e-300 {
+			return o >= lo && o <= hi
+		}
+		a, b := (lo-o)/d, (hi-o)/d
+		if a > b {
+			a, b = b, a
+		}
+		t0, t1 = max(t0, a), min(t1, b)
+		return t0 <= t1
+	}
+	if !slab(ox, dx, r.X, r.X+r.W) || !slab(oy, dy, 0, top) || !slab(oz, dz, r.Y, r.Y+r.H) {
+		return 0, false
+	}
+	return t0, true
 }

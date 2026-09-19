@@ -9,9 +9,13 @@ extends Control
 ##   --wait=<sec>      (default 4)
 ##   --search=<q>      run a search once connected and step to the first hit
 ##   --focus=<substr>  fly to the first search hit's file instead of the line
+##   --view=3d         switch to the 3D city once connected (--yaw, --pitch, --dist)
 
 var client: ScrapClient
 var map: MapView
+var city: CityView
+var _v2d: Button
+var _v3d: Button
 
 var _status: Label
 var _progress: Label
@@ -46,6 +50,10 @@ func _ready() -> void:
 	add_child(client)
 	_build_ui()
 	map.attach(client)
+	city.attach(client)
+	city.hovered.connect(_on_hover)
+	city.selected.connect(_on_selected)
+	city.exited.connect(_on_city_exited)
 	client.hello.connect(_on_hello)
 	client.progress.connect(_on_progress)
 	client.reply.connect(_on_reply)
@@ -87,16 +95,16 @@ func _build_ui() -> void:
 	title.add_theme_font_size_override("font_size", 15)
 	hb.add_child(title)
 	hb.add_child(VSeparator.new())
-	hb.add_child(_tool_button("⌂", "Home — fit the whole repo (Home)", func(): map.home()))
+	hb.add_child(_tool_button("⌂", "Home — fit the whole repo (Home)", func(): city.home() if is_3d() else map.home()))
 	hb.add_child(_tool_button("📂", "Open folder…", _open_folder))
 	hb.add_child(VSeparator.new())
-	var v2d := _tool_button("2D", "Flat map", func(): pass)
-	v2d.toggle_mode = true
-	v2d.button_pressed = true
-	hb.add_child(v2d)
-	var v3d := _tool_button("3D", "3D city (coming next)", func(): pass)
-	v3d.disabled = true
-	hb.add_child(v3d)
+	_v2d = _tool_button("2D", "Flat map (Tab toggles)", func(): set_view(false))
+	_v2d.toggle_mode = true
+	_v2d.button_pressed = true
+	hb.add_child(_v2d)
+	_v3d = _tool_button("3D", "3D city (Tab toggles): left drag pans, right drag orbits, wheel zooms", func(): set_view(true))
+	_v3d.toggle_mode = true
+	hb.add_child(_v3d)
 	hb.add_child(VSeparator.new())
 	_status = Label.new()
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -118,9 +126,16 @@ func _build_ui() -> void:
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(split)
+	var views := Control.new()
+	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.add_child(views)
 	map = MapView.new()
-	map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	split.add_child(map)
+	map.set_anchors_preset(Control.PRESET_FULL_RECT)
+	views.add_child(map)
+	city = CityView.new()
+	city.set_anchors_preset(Control.PRESET_FULL_RECT)
+	city.visible = false
+	views.add_child(city)
 
 	_tabs = TabContainer.new()
 	_tabs.custom_minimum_size = Vector2(360, 0)
@@ -186,6 +201,37 @@ func _open_folder() -> void:
 	_open_dialog.popup_centered_ratio(0.6)
 
 
+func is_3d() -> bool:
+	return city.visible
+
+
+func set_view(three_d: bool) -> void:
+	_v2d.button_pressed = not three_d
+	_v3d.button_pressed = three_d
+	if three_d == is_3d():
+		return
+	if three_d:
+		city.hit_files = map.hit_files
+		city.selection = {} if map.selection_rect.is_empty() else {"rect": map.selection_rect, "top": 0.0}
+		city.enter(map.cx, map.cy, map.zoom)
+		city.visible = true
+		map.visible = false
+		city.grab_focus()
+	else:
+		city.leave()  # tilts up, then _on_city_exited swaps the views
+
+
+func _on_city_exited(cx: float, cy: float, zoom: float) -> void:
+	map.cx = cx
+	map.cy = cy
+	map.zoom = zoom
+	map._zoom_target = zoom
+	map._dirty = true
+	map.visible = true
+	city.visible = false
+	map.grab_focus()
+
+
 # ---------------------------------------------------------------- events
 
 func _unhandled_key_input(ev: InputEvent) -> void:
@@ -198,7 +244,12 @@ func _unhandled_key_input(ev: InputEvent) -> void:
 			_search_edit.grab_focus()
 			_search_edit.select_all()
 		KEY_HOME:
-			map.home()
+			if is_3d():
+				city.home()
+			else:
+				map.home()
+		KEY_TAB:
+			set_view(not is_3d())
 		KEY_F:
 			if map.selection_rect.size() == 4:
 				var t := map.fit_rect(map.selection_rect)
@@ -330,6 +381,7 @@ func _clear_search() -> void:
 	_more_btn.visible = false
 	_search_info.text = "Type in the filter to list its hits"
 	map.clear_search()
+	city.clear_search()
 
 
 func _show_search(r: Dictionary) -> void:
@@ -371,6 +423,7 @@ func _show_search(r: Dictionary) -> void:
 	for h in _search_hits:
 		lines.append(h.rect)
 	map.set_search_results(r.files, lines)
+	city.set_search_results(r.files)
 	_status.text = "search: %d rows%s in %.1f ms" % [int(r.total), " (more)" if r.more else "", r.ms]
 	if _args.has("search") and _hit_index < 0 and shown > 0:
 		_step_hit(1)
@@ -412,6 +465,11 @@ func _on_result_selected() -> void:
 
 func _go_to_hit(i: int) -> void:
 	var h: Dictionary = _search_hits[i]
+	if is_3d():
+		city.current_hit = {"rect": h.rect, "top": float(h.top)}
+		city.select(int(h.node), h.rect, float(h.top))
+		city.focus_line(h.rect, 16.0)
+		return
 	map.current_hit = h.rect
 	map.select_node(int(h.node), h.rect)
 	if _args.has("focus"):
@@ -445,6 +503,18 @@ func _num(v) -> String:
 
 # ---------------------------------------------------------------- automation
 
+func _enter_3d_when_ready() -> void:
+	await get_tree().create_timer(0.8).timeout  # let the 2D camera settle
+	set_view(true)
+	if _args.has("yaw"):
+		city.yaw = float(_args.yaw)
+		city._tween.from.yaw = city.yaw
+		city._tween.to.yaw = city.yaw
+	if _args.has("pitch"):
+		city._tween.to.pitch = float(_args.pitch)
+	if _args.has("dist"):
+		city._tween.to.dist = city.dist * float(_args.dist)
+
 func _automate() -> void:
 	var wait := float(_args.get("wait", "4"))
 	if _args.has("search"):
@@ -453,6 +523,8 @@ func _automate() -> void:
 				_tabs.current_tab = 1
 				_search_edit.text = _args.search
 				_run_search(), CONNECT_ONE_SHOT)
+	if _args.get("view", "") == "3d":
+		client.hello.connect(func(_i): _enter_3d_when_ready(), CONNECT_ONE_SHOT)
 	await get_tree().create_timer(wait).timeout
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()

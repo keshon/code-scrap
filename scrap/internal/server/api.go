@@ -23,6 +23,7 @@ func hello(st *state) map[string]any {
 		"maxZ":    tile.MaxZ,
 		"precise": st.precise,
 		"stats":   m.Stats,
+		"maxTop":  m.Nodes[0].MaxTop,
 	}
 }
 
@@ -52,6 +53,7 @@ func nodeInfo(st *state, id int32) map[string]any {
 		"children":    len(n.Children),
 		"descendants": n.End - id - 1,
 		"rect":        rect(n.Rect),
+		"top":         n.Top,
 		"line":        1,
 	}
 	if n.Kind != codemap.KindDir {
@@ -90,10 +92,26 @@ func pick(st *state, x, y, scale float64) map[string]any {
 		out["kind"] = n.Kind.String()
 		out["path"] = st.m.Path(id)
 		out["rect"] = rect(n.Rect)
+		out["top"] = n.Top
 		if line >= 0 {
 			f := &st.m.Files[n.File]
 			out["lineRect"] = rect(f.LineRect(line))
 		}
+	}
+	return out
+}
+
+func pickRay(st *state, r [6]float64) map[string]any {
+	id, t := st.m.PickRay(r[0], r[1], r[2], r[3], r[4], r[5])
+	out := map[string]any{"op": "pick", "node": id, "line": -1}
+	if id >= 0 {
+		n := &st.m.Nodes[id]
+		out["name"] = n.Name
+		out["kind"] = n.Kind.String()
+		out["path"] = st.m.Path(id)
+		out["rect"] = rect(n.Rect)
+		out["top"] = n.Top
+		out["t"] = t
 	}
 	return out
 }
@@ -112,11 +130,13 @@ func search(st *state, q string, page, size int) map[string]any {
 		hits = append(hits, map[string]any{
 			"node": h.Node, "fileNode": f.Node, "path": f.Path, "line": h.Line + 1,
 			"name": h.Name, "kind": h.Kind.String(), "rect": rect(f.LineRect(h.Line)),
+			"top": m.Nodes[f.Node].Top,
 		})
 	}
-	files := make([][4]float64, 0, len(res.Files))
+	files := make([][5]float64, 0, len(res.Files))
 	for _, fi := range res.Files {
-		files = append(files, rect(m.Nodes[m.Files[fi].Node].Rect))
+		n := &m.Nodes[m.Files[fi].Node]
+		files = append(files, [5]float64{n.Rect.X, n.Rect.Y, n.Rect.W, n.Rect.H, n.Top})
 	}
 	return map[string]any{
 		"op": "search", "q": q, "page": page, "total": res.Total, "more": res.More,
@@ -126,23 +146,23 @@ func search(st *state, q string, page, size int) map[string]any {
 
 // Binary tile frame, little endian:
 //
-//	u8  type (1 = tile)
+//	u8  type (1 = 2D tile, 2 = 3D tile)
 //	u8  z
 //	u16 flags (bit 0: has code image)
 //	i32 x, i32 y
 //	u32 gen
 //	u32 n          boxes
-//	f32 × 16n      MultiMesh instance buffer
+//	f32 × 16n|20n  MultiMesh instance buffer (2D | 3D layout, see tile.Boxes)
 //	i32 × n        node ids
 //	u32 nl         labels
-//	nl × { i32 id, u8 kind, f32 x, y, w, h, u16 len, bytes }
+//	nl × { i32 id, u8 kind, f32 x, y, w, h, top, u16 len, bytes }
 //	[256×256×4]    RGBA8 code image, if flags bit 0
-func encodeTile(st *state, k tile.Key) []byte {
-	b := tile.BoxTile(st.m, k)
+func encodeTile(st *state, k tile.Key, is3D bool) []byte {
+	b := tile.BoxTile(st.m, k, is3D)
 	code := st.renderer.Code(k)
 	size := 20 + 4 + len(b.Instances)*4 + len(b.IDs)*4 + 4
 	for _, l := range b.Labels {
-		size += 4 + 1 + 16 + 2 + len(l.Text)
+		size += 4 + 1 + 20 + 2 + len(l.Text)
 	}
 	if code != nil {
 		size += len(code.Pix)
@@ -153,7 +173,11 @@ func encodeTile(st *state, k tile.Key) []byte {
 	if code != nil {
 		flags |= 1
 	}
-	buf = append(buf, 1, byte(k.Z))
+	typ := byte(1)
+	if is3D {
+		typ = 2
+	}
+	buf = append(buf, typ, byte(k.Z))
 	buf = le.AppendUint16(buf, flags)
 	buf = le.AppendUint32(buf, uint32(int32(k.X)))
 	buf = le.AppendUint32(buf, uint32(int32(k.Y)))
@@ -169,7 +193,7 @@ func encodeTile(st *state, k tile.Key) []byte {
 	for _, l := range b.Labels {
 		buf = le.AppendUint32(buf, uint32(l.ID))
 		buf = append(buf, l.Kind)
-		for _, f := range [4]float32{l.X, l.Y, l.W, l.H} {
+		for _, f := range [5]float32{l.X, l.Y, l.W, l.H, l.Top} {
 			buf = le.AppendUint32(buf, math.Float32bits(f))
 		}
 		t := l.Text

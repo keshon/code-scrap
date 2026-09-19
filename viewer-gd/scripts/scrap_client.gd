@@ -61,7 +61,7 @@ func _launch_server() -> void:
 		push_error("scrap server not found at %s (build it: cd scrap && go build -o bin/scrap.exe ./cmd/scrap)" % scrap_exe)
 		return
 	var port := url.get_slice(":", 2).get_slice("/", 0)
-	_server_pid = OS.create_process(scrap_exe, ["serve", "-addr", "127.0.0.1:" + port, repo], false)
+	_server_pid = OS.create_process(scrap_exe, ["serve", "-addr", "127.0.0.1:" + port, "-parent", str(OS.get_process_id()), repo], false)
 	print("started scrap serve (pid %d) for %s" % [_server_pid, repo])
 
 
@@ -126,9 +126,10 @@ func request(op: String, params: Dictionary = {}) -> int:
 
 
 ## Replaces the server's tile queue (keys ordered by priority).
-func request_tiles(gen: int, keys: Array) -> void:
+## dim 2 = flat boxes, 3 = extruded boxes for the city view.
+func request_tiles(gen: int, keys: Array, dim := 2) -> void:
 	if _connected:
-		_ws.send_text(JSON.stringify({"op": "tiles", "gen": gen, "keys": keys}))
+		_ws.send_text(JSON.stringify({"op": "tiles", "gen": gen, "keys": keys, "dim": dim}))
 
 
 func _on_text(s: String) -> void:
@@ -154,9 +155,12 @@ func _norm(p: String) -> String:
 
 
 func _on_binary(b: PackedByteArray) -> void:
-	if b.size() < 24 or b.decode_u8(0) != 1:
+	var typ := b.decode_u8(0)
+	if b.size() < 24 or (typ != 1 and typ != 2):
 		return
 	var t := {}
+	t.dim = 2 if typ == 1 else 3
+	var stride := 16 if typ == 1 else 20
 	t.z = b.decode_u8(1)
 	var flags := b.decode_u16(2)
 	t.x = b.decode_s32(4)
@@ -164,8 +168,8 @@ func _on_binary(b: PackedByteArray) -> void:
 	t.gen = b.decode_u32(12)
 	var n := b.decode_u32(16)
 	var off := 20
-	t.buffer = b.slice(off, off + n * 64).to_float32_array()
-	off += n * 64
+	t.buffer = b.slice(off, off + n * stride * 4).to_float32_array()
+	off += n * stride * 4
 	t.ids = b.slice(off, off + n * 4).to_int32_array()
 	off += n * 4
 	var nl := b.decode_u32(off)
@@ -176,9 +180,10 @@ func _on_binary(b: PackedByteArray) -> void:
 		l.id = b.decode_s32(off)
 		l.kind = b.decode_u8(off + 4)
 		l.rect = Rect2(b.decode_float(off + 5), b.decode_float(off + 9), b.decode_float(off + 13), b.decode_float(off + 17))
-		var ln := b.decode_u16(off + 21)
-		l.text = b.slice(off + 23, off + 23 + ln).get_string_from_utf8()
-		off += 23 + ln
+		l.top = b.decode_float(off + 21)
+		var ln := b.decode_u16(off + 25)
+		l.text = b.slice(off + 27, off + 27 + ln).get_string_from_utf8()
+		off += 27 + ln
 		labels.append(l)
 	t.labels = labels
 	if flags & 1:

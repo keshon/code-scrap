@@ -24,6 +24,7 @@ type session struct {
 	mu    sync.Mutex
 	queue []tile.Key
 	qgen  uint32 // state generation the queue was requested for
+	q3D   bool   // queue holds 3D (extruded) tiles
 	wake  chan struct{}
 }
 
@@ -32,18 +33,20 @@ func newSession(ctx context.Context, s *Server, c *websocket.Conn) *session {
 }
 
 type request struct {
-	ID    int64    `json:"id"`
-	Op    string   `json:"op"`
-	Keys  [][3]int `json:"keys"`
-	Gen   uint32   `json:"gen"`
-	Node  int32    `json:"node"`
-	X     float64  `json:"x"`
-	Y     float64  `json:"y"`
-	Scale float64  `json:"scale"`
-	Q     string   `json:"q"`
-	Page  int      `json:"page"`
-	Size  int      `json:"size"`
-	Path  string   `json:"path"`
+	ID    int64      `json:"id"`
+	Op    string     `json:"op"`
+	Keys  [][3]int   `json:"keys"`
+	Gen   uint32     `json:"gen"`
+	Dim   int        `json:"dim"`
+	Ray   [6]float64 `json:"ray"` // origin xyz, direction xyz (world units, Y up)
+	Node  int32      `json:"node"`
+	X     float64    `json:"x"`
+	Y     float64    `json:"y"`
+	Scale float64    `json:"scale"`
+	Q     string     `json:"q"`
+	Page  int        `json:"page"`
+	Size  int        `json:"size"`
+	Path  string     `json:"path"`
 }
 
 func (ss *session) run(ctx context.Context) {
@@ -90,6 +93,7 @@ func (ss *session) setQueue(req request) {
 	ss.mu.Lock()
 	ss.queue = keys // viewer orders them center-first
 	ss.qgen = req.Gen
+	ss.q3D = req.Dim == 3
 	ss.mu.Unlock()
 	for range min(len(keys), cap(ss.wake)+1) {
 		select {
@@ -99,20 +103,20 @@ func (ss *session) setQueue(req request) {
 	}
 }
 
-func (ss *session) next() (tile.Key, uint32, bool) {
+func (ss *session) next() (tile.Key, uint32, bool, bool) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	if len(ss.queue) == 0 {
-		return tile.Key{}, 0, false
+		return tile.Key{}, 0, false, false
 	}
 	k := ss.queue[0]
 	ss.queue = ss.queue[1:]
-	return k, ss.qgen, true
+	return k, ss.qgen, ss.q3D, true
 }
 
 func (ss *session) tileWorker(ctx context.Context) {
 	for {
-		k, gen, ok := ss.next()
+		k, gen, is3D, ok := ss.next()
 		if !ok {
 			select {
 			case <-ctx.Done():
@@ -127,7 +131,7 @@ func (ss *session) tileWorker(ctx context.Context) {
 		if st == nil || st.gen != gen {
 			continue // requested against a map that has been replaced
 		}
-		ss.writeBinary(encodeTile(st, k))
+		ss.writeBinary(encodeTile(st, k, is3D))
 	}
 }
 
@@ -146,6 +150,10 @@ func (ss *session) handle(req request) {
 	case "pick":
 		if st != nil {
 			resp = pick(st, req.X, req.Y, req.Scale)
+		}
+	case "pickRay":
+		if st != nil {
+			resp = pickRay(st, req.Ray)
 		}
 	case "search":
 		if st != nil {

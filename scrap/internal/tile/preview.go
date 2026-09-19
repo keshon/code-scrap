@@ -13,7 +13,7 @@ func (r *Renderer) Preview(k Key) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, Px, Px))
 	bg := color.NRGBA{0x16, 0x17, 0x1b, 0xff}
 	fillRect(img, 0, 0, Px, Px, bg, 1)
-	b := BoxTile(r.Map, k)
+	b := BoxTile(r.Map, k, false)
 	for i := 0; i < len(b.IDs); i++ {
 		v := b.Instances[i*16 : i*16+16]
 		w, x, h, y := float64(v[0]), float64(v[3]), float64(v[5]), float64(v[7])

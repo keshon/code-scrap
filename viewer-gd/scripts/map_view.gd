@@ -208,6 +208,8 @@ func _step_fly(dt: float) -> void:
 
 
 func _process(dt: float) -> void:
+	if not visible:
+		return
 	_frame += 1
 	if not _fly.is_empty():
 		_step_fly(dt)
@@ -316,7 +318,7 @@ func _evict() -> void:
 
 
 func _on_tile(t: Dictionary) -> void:
-	if int(t.gen) != gen:
+	if int(t.gen) != gen or int(t.dim) != 2:
 		return
 	var key := Vector3i(t.z, t.x, t.y)
 	var old: TileRec = _tiles.get(key)
@@ -432,7 +434,7 @@ func _send_pick() -> void:
 
 
 func _on_reply(_id: int, data: Dictionary) -> void:
-	if data.get("op") == "pick":
+	if visible and data.get("op") == "pick":
 		hover = data
 		hovered.emit(data)
 		_overlay.queue_redraw()

@@ -32,20 +32,25 @@ type Label struct {
 	ID         int32
 	Kind       uint8 // 0 dir, 1 file, 2 scope
 	X, Y, W, H float32
+	Top        float32 // 3D: roof height of the labelled box
 	Text       string
 }
 
 // Boxes is one vector tile.
 type Boxes struct {
-	// Instances holds 16 float32 per box, in Godot's 2D MultiMesh buffer
-	// layout with colors and custom data:
+	// Instances holds one box per Stride float32s, in Godot's MultiMesh
+	// buffer layout with colors and custom data. 2D (Stride 16):
 	//   [w 0 0 x   0 h 0 y   r g b a   edges kind depth trueMin/w]
+	// 3D (Stride 20), for a unit cube spanning [0,1]³, map Y → world Z:
+	//   [w 0 0 x   0 top 0 0   0 0 h y   r g b a   edges kind depth trueMin/w]
 	// Coordinates are tile-local (0..1). "edges" is a bitmask of the box's
 	// real edges inside this tile (1 left, 2 top, 4 right, 8 bottom), so
 	// outlines of boxes clipped at tile borders stay seamless.
 	Instances []float32
+	Stride    int
 	IDs       []int32
 	Labels    []Label
+	is3D      bool
 }
 
 const (
@@ -53,9 +58,12 @@ const (
 	minLabelPx = 22  // shorter boxes get no label
 )
 
-// BoxTile builds the vector tile for k.
-func BoxTile(m *codemap.Map, k Key) *Boxes {
-	b := &Boxes{}
+// BoxTile builds the vector tile for k, flat (2D) or extruded (3D).
+func BoxTile(m *codemap.Map, k Key, is3D bool) *Boxes {
+	b := &Boxes{Stride: 16, is3D: is3D}
+	if is3D {
+		b.Stride = 20
+	}
 	tr := k.Rect()
 	scale := k.Scale()
 	var visit func(id int32)
@@ -75,7 +83,7 @@ func BoxTile(m *codemap.Map, k Key) *Boxes {
 			}
 		case codemap.KindFile:
 			f := &m.Files[n.File]
-			if f.LH*scale >= 1.2 {
+			if f.LH*scale >= 1.2 && !is3D {
 				for _, sid := range f.Scopes {
 					b.addScope(m, sid, f, tr, scale)
 				}
@@ -88,10 +96,10 @@ func BoxTile(m *codemap.Map, k Key) *Boxes {
 
 func (b *Boxes) add(m *codemap.Map, id int32, r, tr codemap.Rect, scale float64) {
 	n := &m.Nodes[id]
-	b.push(r, tr, BoxColor(m, n), float32(n.Kind), float32(n.Depth), id)
+	b.push(r, tr, BoxColor(m, n), float32(n.Kind), float32(n.Depth), n.Top, id)
 	if r.Min()*scale >= minLabelPx {
 		h := codemap.Header(r)
-		b.label(id, uint8(n.Kind), h, tr, n.Name)
+		b.label(id, uint8(n.Kind), h, n.Top, tr, n.Name)
 	}
 }
 
@@ -106,15 +114,15 @@ func (b *Boxes) addScope(m *codemap.Map, sid int32, f *codemap.File, tr codemap.
 		if !seg.Intersects(tr) || seg.H*scale < minBoxPx {
 			continue
 		}
-		b.push(seg, tr, col, 2, float32(s.Depth), sid)
+		b.push(seg, tr, col, 2, float32(s.Depth), s.Top, sid)
 		if i == 0 && f.LH*scale >= 6 && seg.H*scale >= 3*f.LH*scale {
 			lh := codemap.Rect{X: seg.X + f.CW, Y: seg.Y - 0.55*f.LH, W: seg.W - f.CW, H: 0.9 * f.LH}
-			b.label(sid, 2, lh, tr, s.Name)
+			b.label(sid, 2, lh, s.Top, tr, s.Name)
 		}
 	}
 }
 
-func (b *Boxes) push(r, tr codemap.Rect, c [4]float32, kind, depth float32, id int32) {
+func (b *Boxes) push(r, tr codemap.Rect, c [4]float32, kind, depth float32, top float64, id int32) {
 	x0, y0 := max(r.X, tr.X), max(r.Y, tr.Y)
 	x1, y1 := min(r.X+r.W, tr.X+tr.W), min(r.Y+r.H, tr.Y+tr.H)
 	if x1 <= x0 || y1 <= y0 {
@@ -139,18 +147,26 @@ func (b *Boxes) push(r, tr codemap.Rect, c [4]float32, kind, depth float32, id i
 	x := float32((x0 - tr.X) * inv)
 	y := float32((y0 - tr.Y) * inv)
 	trueMin := float32(r.Min() * inv)
+	if b.is3D {
+		b.Instances = append(b.Instances,
+			w, 0, 0, x,
+			0, max(float32(top*inv), 1e-6), 0, 0,
+			0, 0, h, y)
+	} else {
+		b.Instances = append(b.Instances,
+			w, 0, 0, x,
+			0, h, 0, y)
+	}
 	b.Instances = append(b.Instances,
-		w, 0, 0, x,
-		0, h, 0, y,
 		c[0], c[1], c[2], c[3],
 		edges, kind, depth, trueMin/w)
 	b.IDs = append(b.IDs, id)
 }
 
-func (b *Boxes) label(id int32, kind uint8, r, tr codemap.Rect, text string) {
+func (b *Boxes) label(id int32, kind uint8, r codemap.Rect, top float64, tr codemap.Rect, text string) {
 	inv := 1 / tr.W
 	b.Labels = append(b.Labels, Label{
-		ID: id, Kind: kind, Text: text,
+		ID: id, Kind: kind, Text: text, Top: float32(top * inv),
 		X: float32((r.X - tr.X) * inv), Y: float32((r.Y - tr.Y) * inv),
 		W: float32(r.W * inv), H: float32(r.H * inv),
 	})

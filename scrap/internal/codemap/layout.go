@@ -32,10 +32,46 @@ func content(r Rect) Rect {
 	return rect(r.X+p, r.Y+p+h, r.W-2*p, max(r.H-2*p-h, 0))
 }
 
+// Elevation steps, relative to a box's shorter side. Each box stands on its
+// parent: top = parent top + step. Steps scale with the box, so the city looks
+// the same at every zoom level.
+const (
+	dirStep  = 0.035
+	fileStep = 0.09
+)
+
 func (m *Map) layout() {
 	m.World = rect(0, 0, 1, WorldAspect)
 	m.Nodes[0].Rect = m.World
 	m.layoutNode(0)
+	m.elevate()
+}
+
+// elevate assigns Top (parents precede children in pre-order) and then
+// MaxTop (children follow parents, so walk backwards).
+func (m *Map) elevate() {
+	for i := range m.Nodes {
+		n := &m.Nodes[i]
+		base := 0.0
+		if n.Parent >= 0 {
+			base = m.Nodes[n.Parent].Top
+		}
+		switch n.Kind {
+		case KindDir:
+			if i > 0 {
+				n.Top = base + dirStep*n.Rect.Min()
+			}
+		case KindFile:
+			n.Top = base + fileStep*n.Rect.Min()
+		default:
+			n.Top = base // scopes are drawn on the roof
+		}
+		n.MaxTop = n.Top
+	}
+	for i := len(m.Nodes) - 1; i > 0; i-- {
+		p := &m.Nodes[m.Nodes[i].Parent]
+		p.MaxTop = max(p.MaxTop, m.Nodes[i].MaxTop)
+	}
 }
 
 func (m *Map) layoutNode(id int32) {

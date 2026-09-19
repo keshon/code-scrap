@@ -45,6 +45,10 @@ type Node struct {
 	Hue      uint8 // palette slot inherited from the top-level ancestor
 	Rect     Rect  // layout rect; for scopes, the bounds of all segments
 
+	// 3D elevation (world units): the box rises from the ground to Top;
+	// MaxTop is the highest Top in the subtree (for ray-picking bounds).
+	Top, MaxTop float64
+
 	Lines, Bytes int64
 	Weight       float64
 
