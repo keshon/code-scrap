@@ -60,6 +60,9 @@ var hit_files := []                # Array of world rects [x,y,w,h]
 var hit_lines := []                # Array of world rects
 var current_hit := []              # world rect of the focused hit
 
+# relation arcs: [{a: [x,y,w,h,top], b: [...], color: Color}]
+var arcs := []
+
 # fly-to animation
 var _fly := {}
 
@@ -529,6 +532,7 @@ func _draw_overlay() -> void:
 		var s := rect_to_screen(current_hit)
 		o.draw_rect(s.grow(1), Color(HIT_COLOR, 0.35))
 		o.draw_rect(s.grow(1), HIT_COLOR, false, 1.5)
+	_draw_arcs()
 	# labels
 	_draw_labels()
 	# hover + selection
@@ -601,6 +605,48 @@ func _draw_labels() -> void:
 		budget -= 1
 		o.draw_rect(pill, Color(0.07, 0.075, 0.09, 0.88))
 		o.draw_string(_label_font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.93, 0.94, 0.96))
+
+
+# ---------------------------------------------------------------- relations
+
+func set_arcs(list: Array) -> void:
+	arcs = list
+	_overlay.queue_redraw()
+
+
+func _draw_arcs() -> void:
+	if arcs.is_empty():
+		return
+	var o := _overlay
+	var view := Rect2(Vector2.ZERO, size).grow(200)
+	var alpha: float = clamp(60.0 / arcs.size(), 0.18, 0.8)
+	for arc in arcs:
+		var a := rect_to_screen(arc.a).get_center()
+		var b := rect_to_screen(arc.b).get_center()
+		if not view.has_point(a) and not view.has_point(b):
+			continue
+		var d := b - a
+		var len := d.length()
+		if len < 2.0:
+			continue
+		# bend every arc the same way, so in- and outgoing pairs separate
+		var ctrl: Vector2 = (a + b) * 0.5 + Vector2(-d.y, d.x) / len * min(len * 0.22, 220.0)
+		var pts := PackedVector2Array()
+		for i in 21:
+			var t := i / 20.0
+			pts.append(a.lerp(ctrl, t).lerp(ctrl.lerp(b, t), t))
+		var c: Color = arc.color
+		o.draw_polyline(pts, Color(c, alpha), 1.4, true)
+		# arrowhead at the imported/called end
+		var tip := pts[20]
+		var back := tip - pts[17]
+		if back.length() > 0.5:
+			var dir := back.normalized()
+			var side := Vector2(-dir.y, dir.x)
+			var ac := Color(c, min(alpha * 1.5, 1.0))
+			o.draw_primitive(PackedVector2Array([tip, tip - dir * 8.0 + side * 3.5, tip - dir * 8.0 - side * 3.5]),
+				PackedColorArray([ac, ac, ac]), PackedVector2Array())
+		o.draw_circle(pts[0], 2.0, Color(c, alpha))
 
 
 # ---------------------------------------------------------------- search

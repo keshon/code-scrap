@@ -133,6 +133,9 @@ func relations(st *state, op string, id int32) map[string]any {
 	if op == "calls" {
 		out, in, outTotal, inTotal = m.CallsOf(id, 2000)
 	} else {
+		if id >= 0 && int(id) < len(m.Nodes) && m.Nodes[id].Kind == codemap.KindScope {
+			id = m.Files[m.Nodes[id].File].Node // imports belong to the file
+		}
 		out, in, outTotal, inTotal = m.DepsOf(id, 2000)
 	}
 	nodes := map[string][5]float64{}

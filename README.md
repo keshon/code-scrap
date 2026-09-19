@@ -6,6 +6,8 @@ A zoomable map of a codebase. The whole repository is one surface: directories, 
 
 ![search and fly-to](docs/screenshots/search-flyto.png)
 
+![3D city](docs/screenshots/city.png)
+
 ## Layout
 
 | Path | What |
@@ -48,15 +50,30 @@ scrap/bin/scrap.exe serve -addr 127.0.0.1:7878 D:/path/to/some/repo
 
 | Input | Action |
 |---|---|
-| Wheel / pinch | zoom around the cursor |
-| Drag (any button) | pan |
+| Wheel / pinch | zoom toward the cursor (3D: toward the roof or wall under it) |
+| Drag | pan · 3D: right drag or Shift+drag orbits |
 | Click | select → Inspector |
 | Double-click | fly to the box under the cursor |
+| `Tab` / **2D**·**3D** | switch between the flat map and the 3D city |
 | `/` | search symbols (prefix); **Enter** / **Shift+Enter** step through hits |
 | `Home` | fit the whole repo |
 | `F` | fit the selection |
 | `Backspace` | select and fly to the parent |
 | `Esc` | clear search |
+
+### Lenses (toolbar)
+
+Every lens is optional; the defaults show the plain map.
+
+| Lens | What it does |
+|---|---|
+| **height** | 3D building height: *Nesting* (terraces), *Flat*, or a metric: lines, complexity, functions, churn, recent change, authors |
+| **color** | *Area* hue, or the same metrics as a blue → red percentile ramp |
+| **importance** | shrink vendored, test, generated, asset and data files so the core code gets the space |
+| **imports** | arcs from the selection to what it imports (orange) and from what imports it (blue) |
+| **calls** | arcs to what the selected function/file calls (violet) and from its callers (green); syntax-level, ambiguous names skipped |
+
+Git lenses read `git log` for the last 12 months in the background (`scrap serve -git-since` changes the window).
 
 ### CLI
 
@@ -71,12 +88,16 @@ scrap serve  [-addr host:port] [path]          WebSocket API for the viewers
 ## Status
 
 Done:
-- **M0–M2:** indexing, layout, tile streaming, level of detail down to glyphs
-- **M4:** symbol prefix search with map highlights and fly-to
+- **Map:** indexing (fast pass + tree-sitter), layout, tile streaming
+- **GPU text:** the system coding font, from line dashes to readable code without popping
+- **Search:** symbol search with fly-to
+- **3D city:** orbit camera and x-ray selection
+- **Lenses:** height/color metrics, importance weighting and git history
+- **Relations:** import graph and call graph
 
 Next:
-- the 3D city view
 - a content-hash cache for the precise pass
 - file watching
-- git metrics
+- aggregated arcs when zoomed out
+- UI polish and DPI scaling
 - the C# viewer

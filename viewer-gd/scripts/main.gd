@@ -11,6 +11,8 @@ extends Control
 ##   --focus=<substr>  fly to the first search hit's file instead of the line
 ##   --view=3d         switch to the 3D city once connected (--yaw, --pitch, --dist, --wheel=N)
 ##   --lens=height:churn,color:complexity,importance   apply lenses once git is loaded
+##   --rel=imports,calls   turn relation arcs on (use with --search to select)
+##   --nofly           select search hits without flying to them
 
 var client: ScrapClient
 var map: MapView
@@ -22,6 +24,18 @@ var _color_opt: OptionButton
 var _importance: CheckButton
 var _legend: Label
 var _syncing_view := false
+var _imports_btn: CheckButton
+var _calls_btn: CheckButton
+var _selected_id := -1
+var _rel_reqs := {}          # request id -> op
+var _rel := {}               # op -> reply
+var _node_info := {}
+
+# arc colors: [outgoing, incoming] per relation
+const REL_COLORS := {
+	"edges": [Color(1.0, 0.62, 0.25), Color(0.35, 0.82, 1.0)],
+	"calls": [Color(0.8, 0.5, 1.0), Color(0.55, 0.95, 0.45)],
+}
 
 # lenses: [id, label, needs git]
 const HEIGHTS := [["depth", "Nesting", false], ["flat", "Flat", false], ["lines", "Lines", false],
@@ -132,6 +146,10 @@ func _build_ui() -> void:
 	_importance.focus_mode = Control.FOCUS_NONE
 	_importance.toggled.connect(func(_on): _send_view())
 	hb.add_child(_importance)
+	_imports_btn = _relation_toggle("imports", "Show what the selection imports (orange) and what imports it (blue).")
+	hb.add_child(_imports_btn)
+	_calls_btn = _relation_toggle("calls", "Show what the selected function or file calls (violet) and who calls it (green). Syntax-level: ambiguous names are skipped.")
+	hb.add_child(_calls_btn)
 	_legend = Label.new()
 	_legend.modulate = Color(0.7, 0.72, 0.78)
 	_legend.add_theme_font_size_override("font_size", 12)
@@ -230,6 +248,42 @@ func _tool_button(text: String, tip: String, cb: Callable) -> Button:
 
 func _open_folder() -> void:
 	_open_dialog.popup_centered_ratio(0.6)
+
+
+func _relation_toggle(text: String, tip: String) -> CheckButton:
+	var b := CheckButton.new()
+	b.text = text
+	b.tooltip_text = tip
+	b.focus_mode = Control.FOCUS_NONE
+	b.toggled.connect(func(_on): _refresh_relations())
+	return b
+
+
+## Asks for the active relations of the selection; arcs update on reply.
+func _refresh_relations() -> void:
+	_rel = {}
+	_rel_reqs = {}
+	_push_arcs()
+	if _selected_id < 0:
+		return
+	if _imports_btn.button_pressed:
+		_rel_reqs[client.request("edges", {"node": _selected_id})] = "edges"
+	if _calls_btn.button_pressed:
+		_rel_reqs[client.request("calls", {"node": _selected_id})] = "calls"
+
+
+func _push_arcs() -> void:
+	var list := []
+	for op in _rel:
+		var r: Dictionary = _rel[op]
+		var nodes: Dictionary = r.nodes
+		for dir in [0, 1]:
+			var key := "out" if dir == 0 else "in"
+			for e in r[key]:
+				list.append({"a": nodes[str(int(e[0]))], "b": nodes[str(int(e[1]))], "color": REL_COLORS[op][dir]})
+	map.set_arcs(list)
+	city.set_arcs(list)
+	_render_inspector()
 
 
 func _small_label(t: String) -> Label:
@@ -357,8 +411,11 @@ func _on_connection(ok: bool) -> void:
 
 
 func _on_hello(info: Dictionary) -> void:
+	var regen: bool = _hello.has("gen") and int(_hello.gen) != int(info.gen)
 	_hello = info
 	_sync_view(info)
+	if regen:
+		_refresh_relations()  # geometry may have moved with the new view
 	var s: Dictionary = info.stats
 	var pass_name := "precise" if info.precise else "fast"
 	_progress.text = "%s · %s files · %s lines · %s pass" % [info.name, _num(s.Files), _num(s.Lines), pass_name]
@@ -391,6 +448,8 @@ func _on_hover(h: Dictionary) -> void:
 
 func _on_selected(id: int) -> void:
 	_node_req = client.request("node", {"node": id})
+	_selected_id = id
+	_refresh_relations()
 
 
 func _on_reply(id: int, data: Dictionary) -> void:
@@ -413,12 +472,24 @@ func _on_reply(id: int, data: Dictionary) -> void:
 		"search":
 			if id == _search_req:
 				_show_search(data)
+		"edges", "calls":
+			if _rel_reqs.get(id, "") == data.op:
+				_rel[data.op] = data
+				_push_arcs()
 
 
 var _fly_after_node := false
 
 
 func _show_node(n: Dictionary) -> void:
+	_node_info = n
+	_render_inspector()
+
+
+func _render_inspector() -> void:
+	var n := _node_info
+	if n.is_empty():
+		return
 	var t := "[b]%s[/b] [color=#8a93a3]· %s[/color]\n" % [_esc(n.name), n.kind]
 	t += "[color=#aab2c0]%s[/color]\n" % _esc(n.path)
 	if n.kind != "dir":
@@ -448,6 +519,12 @@ func _show_node(n: Dictionary) -> void:
 		t += "cyclomatic complexity  %d\nparameters  %d\nmax nesting  %d\nlength  %d lines\n" % [int(m.complexity), int(m.params), int(m.nesting), int(m.lines)]
 	else:
 		t += "[color=#8a93a3]No function metrics for this selection.[/color]\n"
+	if _rel.has("edges"):
+		var r: Dictionary = _rel.edges
+		t += "\n[b]Imports[/b]\n[color=#ff9e40]imports %d[/color] · [color=#59d1ff]imported by %d[/color]\n" % [int(r.outTotal), int(r.inTotal)]
+	if _rel.has("calls"):
+		var r: Dictionary = _rel.calls
+		t += "\n[b]Calls[/b] [color=#8a93a3](syntax-level)[/color]\n[color=#cc80ff]calls %d[/color] · [color=#8cf273]called by %d[/color]\n" % [int(r.outTotal), int(r.inTotal)]
 	_inspector.text = t
 	_tabs.current_tab = 0 if _search_q == "" else _tabs.current_tab
 
@@ -563,11 +640,14 @@ func _go_to_hit(i: int) -> void:
 	var h: Dictionary = _search_hits[i]
 	if is_3d():
 		city.current_hit = {"rect": h.rect, "top": float(h.top)}
-		city.select(int(h.node), h.rect, float(h.top))
-		city.focus_line(h.rect, float(h.top), 16.0)
+		city.select(int(h.node), h.rect, float(h.top), "scope" if h.kind != "block" else "file")
+		if not _args.has("nofly"):
+			city.focus_line(h.rect, float(h.top), 16.0)
 		return
 	map.current_hit = h.rect
 	map.select_node(int(h.node), h.rect)
+	if _args.has("nofly"):
+		return
 	if _args.has("focus"):
 		_node_req = client.request("node", {"node": int(h.fileNode)})
 		_fly_after_node = true
@@ -631,6 +711,9 @@ func _enter_3d_when_ready() -> void:
 		city._tween.to.pitch = float(_args.pitch)
 	if _args.has("dist"):
 		city._tween.to.dist = city.dist * float(_args.dist)
+	if _args.has("home"):
+		await get_tree().create_timer(1.0).timeout
+		city.home()
 	if _args.has("wheel"):
 		# simulate zooming in at the view center, one notch at a time
 		await get_tree().create_timer(1.2).timeout
@@ -659,6 +742,9 @@ func _automate() -> void:
 		client.hello.connect(func(_i): _enter_3d_when_ready(), CONNECT_ONE_SHOT)
 	if _args.has("lens"):
 		_apply_lens_when_ready(_args.lens)
+	if _args.has("rel"):
+		_imports_btn.button_pressed = "imports" in _args.rel
+		_calls_btn.button_pressed = "calls" in _args.rel
 	await get_tree().create_timer(wait).timeout
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()

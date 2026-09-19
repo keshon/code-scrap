@@ -58,6 +58,9 @@ var _plane: ArrayMesh
 var _sel_xray: MeshInstance3D
 var _sel_fill: MeshInstance3D
 var _hov_xray: MeshInstance3D
+var _arcs_mesh: MeshInstance3D
+var _arcs_origin := []
+var arcs := []
 
 var _pressed := -1
 var _dragging := false
@@ -135,7 +138,57 @@ func _ready() -> void:
 	_sel_fill = _highlight("res://shaders/highlight_fill.gdshader", {})
 	_sel_xray = _highlight("res://shaders/highlight_xray.gdshader", {"color": Color(0.4, 0.7, 1.0, 1.0), "width_px": 2.0, "face_alpha": 0.04})
 	_hov_xray = _highlight("res://shaders/highlight_xray.gdshader", {"color": Color(0.6, 0.8, 1.0, 0.55), "width_px": 1.0, "face_alpha": 0.0})
+	var im := ImmediateMesh.new()
+	_arcs_mesh = MeshInstance3D.new()
+	_arcs_mesh.mesh = im
+	var am := StandardMaterial3D.new()
+	am.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	am.vertex_color_use_as_albedo = true
+	am.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	am.no_depth_test = true  # arcs read through buildings, like the x-ray outline
+	am.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_arcs_mesh.material_override = am
+	_arcs_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_root3d.add_child(_arcs_mesh)
 	resized.connect(func(): _dirty = true)
+
+
+func set_arcs(list: Array) -> void:
+	arcs = list
+	_arcs_origin = []  # force a rebuild
+	_dirty = true
+
+
+## Arcs are rebuilt when they change or the floating origin moves.
+func _update_arcs() -> void:
+	if _arcs_origin == _origin:
+		return
+	_arcs_origin = _origin.duplicate()
+	var im: ImmediateMesh = _arcs_mesh.mesh
+	im.clear_surfaces()
+	if arcs.is_empty():
+		return
+	var alpha: float = clamp(60.0 / arcs.size(), 0.2, 0.85)
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	for arc in arcs:
+		var ra: Array = arc.a
+		var rb: Array = arc.b
+		var a := _world_to_render(ra[0] + ra[2] * 0.5, ra[4], ra[1] + ra[3] * 0.5)
+		var b := _world_to_render(rb[0] + rb[2] * 0.5, rb[4], rb[1] + rb[3] * 0.5)
+		var span := a.distance_to(b)
+		var ctrl: Vector3 = (a + b) * 0.5 + Vector3.UP * (max(a.y, b.y) - (a.y + b.y) * 0.5 + span * 0.45)
+		var c: Color = arc.color
+		var prev := a
+		for i in range(1, 25):
+			var t := i / 24.0
+			var p := a.lerp(ctrl, t).lerp(ctrl.lerp(b, t), t)
+			# fade toward the target end so direction reads without arrowheads
+			im.surface_set_color(Color(c, alpha * (1.0 - 0.6 * (t - 1.0 / 24.0))))
+			im.surface_add_vertex(prev)
+			im.surface_set_color(Color(c, alpha * (1.0 - 0.6 * t)))
+			im.surface_add_vertex(p)
+			prev = p
+	im.surface_end()
 
 
 func _highlight(shader_path: String, params: Dictionary) -> MeshInstance3D:
@@ -469,6 +522,7 @@ func _update_tiles() -> void:
 			rec.node.scale = Vector3.ONE * ts * S
 	_update_text(cam_pos)
 	_update_highlights()
+	_update_arcs()
 	if _tiles.size() > MAX_CACHED:
 		var recs := _tiles.values()
 		recs.sort_custom(func(p, q): return p.used < q.used)
@@ -508,22 +562,27 @@ func _update_text(cam_pos: Vector3) -> void:
 		node.scale = Vector3(b.w * S, 1.0, b.h * S))
 
 
-func _place_box(mi: MeshInstance3D, r: Array, top: float, grow := 0.0) -> void:
-	var g: float = max(r[2], r[3]) * grow
-	mi.position = _world_to_render(r[0] - g, 0.0, r[1] - g)
-	mi.scale = Vector3((r[2] + 2.0 * g) * S, max(top * (1.0 + grow), 1e-9) * S, (r[3] + 2.0 * g) * S)
+func _place_box(mi: MeshInstance3D, r: Array, top: float, kind := "") -> void:
+	if kind == "scope":
+		# a function lives on its file's roof: highlight a thin slab there
+		var h: float = max(min(r[2], r[3]) * 0.03, 1e-9)
+		mi.position = _world_to_render(r[0], top, r[1])
+		mi.scale = Vector3(r[2] * S, h * S, r[3] * S)
+		return
+	mi.position = _world_to_render(r[0], 0.0, r[1])
+	mi.scale = Vector3(r[2] * S, max(top, 1e-9) * S, r[3] * S)
 
 
 func _update_highlights() -> void:
 	_sel_xray.visible = not selection.is_empty()
 	_sel_fill.visible = _sel_xray.visible
 	if _sel_xray.visible:
-		_place_box(_sel_xray, selection.rect, selection.top)
-		_place_box(_sel_fill, selection.rect, selection.top)
+		_place_box(_sel_xray, selection.rect, selection.top, selection.get("kind", ""))
+		_place_box(_sel_fill, selection.rect, selection.top, selection.get("kind", ""))
 	var hv := hover.has("rect") and int(hover.get("node", -1)) >= 0
 	_hov_xray.visible = hv
 	if hv:
-		_place_box(_hov_xray, hover.rect, float(hover.get("top", 0.0)))
+		_place_box(_hov_xray, hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
 
 
 func _outside(planes: Array[Plane], a: Vector3, b: Vector3) -> bool:
@@ -641,7 +700,7 @@ func _gui_input(ev: InputEvent) -> void:
 					focus_rect(hover.rect, float(hover.get("top", 0.0)))
 			else:
 				if _pressed == MOUSE_BUTTON_LEFT and not _dragging and hover.has("rect"):
-					select(int(hover.node), hover.rect, float(hover.get("top", 0.0)))
+					select(int(hover.node), hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
 				_pressed = -1
 				_dragging = false
 	elif ev is InputEventMouseMotion:
@@ -705,8 +764,8 @@ func _on_reply(id: int, data: Dictionary) -> void:
 		_overlay.queue_redraw()
 
 
-func select(id: int, rect: Array, top: float) -> void:
-	selection = {"rect": rect, "top": top}
+func select(id: int, rect: Array, top: float, kind := "") -> void:
+	selection = {"rect": rect, "top": top, "kind": kind}
 	selected.emit(id)
 	_update_highlights()
 	_overlay.queue_redraw()
@@ -729,7 +788,13 @@ func _draw_overlay() -> void:
 	for f in hit_files:
 		var pts := _project_roof(f, f[4] if f.size() > 4 else 0.0)
 		if pts.size() == 4:
-			o.draw_colored_polygon(pts, Color(HIT_COLOR, 0.35))
+			var extent := sqrt(max(Rect2(pts[0], Vector2.ZERO).expand(pts[1]).expand(pts[2]).expand(pts[3]).get_area(), 0.0))
+			var fade: float = 1.0 - smoothstep(60.0, 400.0, extent)
+			if fade > 0.02:
+				o.draw_colored_polygon(pts, Color(HIT_COLOR, 0.35 * fade))
+			var loop := pts.duplicate()
+			loop.append(pts[0])
+			o.draw_polyline(loop, Color(HIT_COLOR, 0.5 + 0.3 * fade), 1.0)
 	if not current_hit.is_empty():
 		var pts := _project_roof(current_hit.rect, current_hit.top)
 		if pts.size() == 4:
