@@ -179,6 +179,9 @@ A viewport overlay (bottom-right, collapsible) generated from what's active: col
 - **Focus + context:** when relations or search are active, dim everything unrelated (an opacity setting).
 - **Code roofs:** a slightly lifted roof tone behind text for contrast, and a line-spacing setting.
 - **Palettes as presets:** Scope pastel, neutral grey (Modo-like), FUI cyan.
+- **Roof text color: syntax / mono / auto** (from the Scope reference). From a distance, syntax colors on roofs carry no information and add visual load, so Scope shows near-monochrome roofs. "Auto" fades from mono to syntax colors as lines become readable. The mono tone and the fade range are settings.
+- **Bevels:** buildings and plinths get a chamfered top edge that catches light, as in the reference. Bevel size is relative to box size, drawn in the shader or with a bevelled mesh variant; on/off and size are settings.
+- **Lighting model:** today it's unshaded with a fake directional term. Options: flat · directional + ambient · directional + SSAO (Godot's environment, with the city shader switched to a lit one). The goal is readable shadows and highlights between terraces, as in the reference. Light direction and intensity are settings.
 
 ---
 
