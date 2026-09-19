@@ -15,6 +15,7 @@ global uniform float scrap_line_px;       // outline width, physical px
 global uniform float scrap_line_min_box;  // boxes smaller than this: no outline
 global uniform float scrap_depth_tone;    // fills lighten with nesting depth
 global uniform float scrap_roof_tone;     // files: lift behind the code text
+global uniform float scrap_roof_fill;     // 0 auto, 1 dark, 2 colored (as in 3D)
 
 #include "res://shaders/scope_outline.gdshaderinc"
 
@@ -47,7 +48,9 @@ void fragment() {
 	if ((edges & 8) != 0) line = max(line, edge_cover(fc.y, fc.y + far.y, -1.0, w));
 	float true_px = v_custom.w / d.x;               // box's shorter side on screen
 	float outline = line * smoothstep(scrap_line_min_box * 0.5, scrap_line_min_box, true_px);
-	float big = smoothstep(8.0, 90.0, true_px);
+	float big = scrap_roof_fill > 1.5 ? 0.0
+		: scrap_roof_fill > 0.5 ? smoothstep(8.0, 90.0, true_px)
+		: smoothstep(160.0, 520.0, true_px);
 	vec3 hue = v_hue.rgb;
 	if (v_custom.y > 1.5) {
 		float a = scope_outline(near, far, edges, fc, v_custom.y, v_custom.z, w)

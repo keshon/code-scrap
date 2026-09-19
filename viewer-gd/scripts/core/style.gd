@@ -44,6 +44,7 @@ const SHADER_GLOBALS := {
 	"look.light_strength": ["scrap_light_strength", "f"],
 	"look.contact": ["scrap_contact", "f"],
 	"look.light": ["scrap_flat", "e"],
+	"look.roof_fill": ["scrap_roof_fill", "e"],       # 0 auto, 1 dark, 2 colored
 	"look.light_space": ["scrap_light_space", "e"],   # 0 camera, 1 world
 	"look.ambient": ["scrap_ambient", "f"],
 	"look.specular": ["scrap_specular", "f"],

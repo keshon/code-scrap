@@ -147,6 +147,10 @@ scrap_hov_tint={
 "type": "color",
 "value": Color(0, 0, 0, 0)
 }
+scrap_roof_fill={
+"type": "float",
+"value": 0.0
+}
 
 [rendering]
 

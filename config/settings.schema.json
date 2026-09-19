@@ -486,6 +486,18 @@
       "label": "Look",
       "settings": [
         {
+          "id": "look.roof_fill",
+          "type": "enum",
+          "options": [
+            "auto",
+            "dark",
+            "colored"
+          ],
+          "default": "auto",
+          "label": "Roof fill",
+          "desc": "colored: roofs take their area or lens color, the map reads as a colored city · dark: roofs are dark code rooms as soon as a box is a few pixels big · auto: colored from afar, dark once a box is big enough to read its code."
+        },
+        {
           "id": "look.light",
           "type": "enum",
           "options": [

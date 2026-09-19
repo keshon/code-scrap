@@ -1,0 +1,11 @@
+{
+  "name": "Colored city",
+  "desc": "The map as a colored city: roofs in their area or lens color, a fixed sun, little shine.",
+  "values": {
+    "look.roof_fill": "colored",
+    "look.light_space": "world",
+    "look.specular": 0.1,
+    "look.ambient": 0.4,
+    "lines.box_width": 1.5
+  }
+}

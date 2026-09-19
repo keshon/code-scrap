@@ -730,9 +730,10 @@ func _draw_labels() -> void:
 				if kind == 1:
 					c.size = max(fs - 1, 8)
 					# zoomed out, the folder's tab sits where the first file's
-					# name goes: then the name moves just below it
-					if r.size.y > (fs + 6) * 3.0:
-						c.alts = [c.pos + Vector2(0, fs + 7)]
+					# name goes: then the name moves just below it (r is the
+					# file's header strip, 2% of its shorter side, so the box
+					# itself is always tall enough)
+					c.alts = [c.pos + Vector2(0, fs + 7), c.pos + Vector2(0, 2 * (fs + 7))]
 			cand.append(c)
 	ViewCommon.draw_labels(o, ViewCommon.place_labels(cand, Settings.get_value("labels.max")))
 

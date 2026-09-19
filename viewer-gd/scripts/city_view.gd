@@ -1122,8 +1122,17 @@ func _draw_labels() -> void:
 				continue
 			var sa := _unproject(at)
 			var lfs: int = fs if kind == 0 else max(fs - 1, 8)
-			cand.append({"id": id, "prio": w, "kind": kind, "color": rec.label_colors[i], "text": rec.label_texts[i],
-				"max_w": w - 8.0, "pos": sa - Vector2(0, lfs + 6), "center": true, "size": lfs, "at": at})
+			var c := {"id": id, "prio": w, "kind": kind, "color": rec.label_colors[i], "text": rec.label_texts[i],
+				"max_w": w - 8.0, "pos": sa - Vector2(0, lfs + 6), "center": true, "size": lfs, "at": at}
+			if kind == 1:
+				# when a folder's name takes the spot, step onto the roof, away
+				# from the edge the name sits on (which way that is on screen
+				# depends on the camera); the offset is carried to the label
+				var inner := _unproject(_world_to_render(rec.label_data[j] + rec.label_data[j + 2] * 0.5,
+					rec.label_data[j + 4], rec.label_data[j + 1] + rec.label_data[j + 3] * 6.0))
+				var step := (lfs + 7.0) * (1.0 if inner.y >= sa.y else -1.0)
+				c.alts = [c.pos + Vector2(0, step), c.pos + Vector2(0, 2.0 * step)]
+			cand.append(c)
 	_place_labels_3d(ViewCommon.place_labels(cand, Settings.get_value("labels.max")))
 	# wall signs not used this frame go back to the pool
 	for id in _wall_of.keys():
@@ -1247,6 +1256,8 @@ func _place_labels_3d(placed: Array) -> void:
 				l = _label_free.pop_back()
 			next[c.id] = l
 		var fs := int(round(float(c.size) * _f))
+		# the spot place_labels chose, relative to the anchor's default spot
+		var shift: float = p.rect.position.y - c.pos.y
 		l.visible = true
 		l.position = c.at
 		# far boxes (small on screen) fade their label out
@@ -1270,7 +1281,7 @@ func _place_labels_3d(placed: Array) -> void:
 			ghost.position = c.at
 		# Label3D rebuilds its mesh on most property changes: only touch what
 		# changed (the pool is reused every frame)
-		var look := [p.text, c.kind, fs, c.color, through, ghosts, px, alpha, Style.theme_id]
+		var look := [p.text, c.kind, fs, c.color, through, ghosts, px, alpha, shift, Style.theme_id]
 		if l.get_meta("look", []) == look:
 			continue
 		l.set_meta("look", look)
@@ -1286,7 +1297,7 @@ func _place_labels_3d(placed: Array) -> void:
 			t.font_size = fs
 			t.pixel_size = px
 			t.outline_size = max(int(fs * 0.45), 4)
-			t.offset = Vector2(0.0, 4.0) * _f
+			t.offset = Vector2(0.0, 4.0 - shift) * _f
 			t.modulate = Color(text_c, a)
 			t.outline_modulate = Color(line_c, line_c.a * a)
 	_label_of = next

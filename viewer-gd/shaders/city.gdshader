@@ -17,6 +17,7 @@ uniform float level = 0.0;        // tile zoom level
 global uniform float scrap_line_px;       // outline width, physical px
 global uniform float scrap_line_min_box;  // boxes smaller than this: no outline
 global uniform float scrap_roof_tone;
+global uniform float scrap_roof_fill;     // 0 auto, 1 dark, 2 colored
 global uniform vec3 scrap_light_dir;      // toward the light (view space in camera mode)
 global uniform float scrap_light_space;   // 0 camera (headlight), 1 world (sun)
 global uniform float scrap_light_strength;
@@ -144,7 +145,12 @@ void fragment() {
 			float dz = min(dt, db);
 			float d = min(dx / pw.x, dz / pw.y);
 			float line = (1.0 - smoothstep(w - 0.45, w + 0.45, d)) * show;
-			float big = smoothstep(8.0, 90.0, true_px);
+			// roof fill: dark "code rooms" once a box is big on screen, or
+			// coloured by its area / lens; auto stays coloured until the
+			// box is big enough to read its code
+			float big = scrap_roof_fill > 1.5 ? 0.0
+				: scrap_roof_fill > 0.5 ? smoothstep(8.0, 90.0, true_px)
+				: smoothstep(160.0, 520.0, true_px);
 			// 3D colors are linear: the same lift looks ~4x stronger than in 2D
 			vec3 base = kind > 0.5 ? mix(hue * 0.45, vec3(0.055, 0.058, 0.07) + scrap_roof_tone * 0.25, big)
 			                       : hue * mix(0.5, 0.2, big);
