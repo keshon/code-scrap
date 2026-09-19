@@ -15,7 +15,10 @@ import (
 )
 
 func TestProtocol(t *testing.T) {
-	s := New(codemap.Options{})
+	s, err := New(codemap.Options{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Open("../.."); err != nil { // the scrap module itself
 		t.Fatal(err)
 	}
@@ -84,6 +87,31 @@ func TestProtocol(t *testing.T) {
 		json.Unmarshal(b, &m)
 		if m.ID != 7 || m.Total == 0 {
 			t.Fatalf("search reply: %s", b)
+		}
+		return true
+	})
+
+	send(map[string]any{"op": "font"})
+	readUntil(func(typ websocket.MessageType, b []byte) bool {
+		return typ == websocket.MessageBinary && b[0] == 4 && len(b) > 10
+	})
+
+	// a text block of this very file
+	var fileNode int32 = -1
+	st := s.cur.Load()
+	for _, f := range st.m.Files {
+		if strings.HasSuffix(f.Path, "server_test.go") {
+			fileNode = f.Node
+		}
+	}
+	send(map[string]any{"op": "texts", "gen": gen, "texts": [][3]int{{int(fileNode), 0, 0}}})
+	readUntil(func(typ websocket.MessageType, b []byte) bool {
+		if typ != websocket.MessageBinary || b[0] != 3 {
+			return false
+		}
+		rows := int(binary.LittleEndian.Uint16(b[10:]))
+		if rows == 0 || len(b) != 16+rows*128*6 {
+			t.Fatalf("text frame: rows %d, len %d", rows, len(b))
 		}
 		return true
 	})

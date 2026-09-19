@@ -24,6 +24,12 @@ func hello(st *state) map[string]any {
 		"precise": st.precise,
 		"stats":   m.Stats,
 		"maxTop":  m.Nodes[0].MaxTop,
+		"text": map[string]any{
+			"font":      st.renderer.Atlas.Font,
+			"colChars":  codemap.ColChars,
+			"blockRows": tile.BlockRows,
+			"texW":      tile.BlockChars,
+		},
 	}
 }
 
@@ -148,7 +154,7 @@ func search(st *state, q string, page, size int) map[string]any {
 //
 //	u8  type (1 = 2D tile, 2 = 3D tile)
 //	u8  z
-//	u16 flags (bit 0: has code image)
+//	u16 flags (reserved, 0)
 //	i32 x, i32 y
 //	u32 gen
 //	u32 n          boxes
@@ -156,23 +162,17 @@ func search(st *state, q string, page, size int) map[string]any {
 //	i32 × n        node ids
 //	u32 nl         labels
 //	nl × { i32 id, u8 kind, f32 x, y, w, h, top, u16 len, bytes }
-//	[256×256×4]    RGBA8 code image, if flags bit 0
+//	u32 nb         text blocks
+//	nb × { i32 file, u16 col, u16 seg, u16 rows, f32 x, y, w, h, top }
 func encodeTile(st *state, k tile.Key, is3D bool) []byte {
 	b := tile.BoxTile(st.m, k, is3D)
-	code := st.renderer.Code(k)
-	size := 20 + 4 + len(b.Instances)*4 + len(b.IDs)*4 + 4
+	size := 20 + 4 + len(b.Instances)*4 + len(b.IDs)*4 + 4 + 4 + len(b.Blocks)*30
 	for _, l := range b.Labels {
 		size += 4 + 1 + 20 + 2 + len(l.Text)
-	}
-	if code != nil {
-		size += len(code.Pix)
 	}
 	buf := make([]byte, 0, size)
 	le := binary.LittleEndian
 	var flags uint16
-	if code != nil {
-		flags |= 1
-	}
 	typ := byte(1)
 	if is3D {
 		typ = 2
@@ -203,8 +203,49 @@ func encodeTile(st *state, k tile.Key, is3D bool) []byte {
 		buf = le.AppendUint16(buf, uint16(len(t)))
 		buf = append(buf, t...)
 	}
-	if code != nil {
-		buf = append(buf, code.Pix...)
+	buf = le.AppendUint32(buf, uint32(len(b.Blocks)))
+	for _, bl := range b.Blocks {
+		buf = le.AppendUint32(buf, uint32(bl.File))
+		buf = le.AppendUint16(buf, bl.Col)
+		buf = le.AppendUint16(buf, bl.Seg)
+		buf = le.AppendUint16(buf, bl.Rows)
+		for _, f := range [5]float32{bl.X, bl.Y, bl.W, bl.H, bl.Top} {
+			buf = le.AppendUint32(buf, math.Float32bits(f))
+		}
 	}
 	return buf
+}
+
+// Text block frame:
+//
+//	u8 type (3), u8 0, u16 col, i32 file, u16 seg, u16 rows, u32 gen
+//	RGBA8 x texW*rows   premultiplied syntax color
+//	RG8   x texW*rows   atlas cell per character
+func encodeText(st *state, k textKey) []byte {
+	rows, color, glyphs, ok := st.renderer.TextBlock(k.file, k.col, k.seg)
+	if !ok {
+		return nil
+	}
+	le := binary.LittleEndian
+	buf := make([]byte, 0, 16+len(color)+len(glyphs))
+	buf = append(buf, 3, 0)
+	buf = le.AppendUint16(buf, uint16(k.col))
+	buf = le.AppendUint32(buf, uint32(k.file))
+	buf = le.AppendUint16(buf, uint16(k.seg))
+	buf = le.AppendUint16(buf, uint16(rows))
+	buf = le.AppendUint32(buf, st.gen)
+	buf = append(buf, color...)
+	return append(buf, glyphs...)
+}
+
+// Font atlas frame: u8 type (4), u8 0, u16 cols, rows, cellW, cellH, then
+// L8 pixels, (cols*cellW) x (rows*cellH).
+func encodeFont(a *tile.Atlas) []byte {
+	le := binary.LittleEndian
+	buf := make([]byte, 0, 10+len(a.Pix))
+	buf = append(buf, 4, 0)
+	for _, v := range []int{a.Cols, a.Rows, a.CellW, a.CellH} {
+		buf = le.AppendUint16(buf, uint16(v))
+	}
+	return append(buf, a.Pix...)
 }

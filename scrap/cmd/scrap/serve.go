@@ -13,6 +13,7 @@ func cmdServe(args []string) error {
 	var c common
 	c.register(fs)
 	addr := fs.String("addr", "127.0.0.1:7878", "listen address")
+	fontPath := fs.String("font", "", "code font file (default: Consolas / Cascadia / Menlo / DejaVu Sans Mono, else Go Mono)")
 	parent := fs.Int("parent", 0, "exit when this process id exits (set by the viewer)")
 	fs.Parse(args)
 	if *parent > 0 {
@@ -25,7 +26,10 @@ func cmdServe(args []string) error {
 	if _, err := os.Stat(root); err != nil {
 		return err
 	}
-	s := server.New(codemap.Options{SortByName: c.byName, NoGit: c.noGit})
+	s, err := server.New(codemap.Options{SortByName: c.byName, NoGit: c.noGit}, *fontPath)
+	if err != nil {
+		return err
+	}
 	errc := make(chan error, 1)
 	go func() { errc <- s.ListenAndServe(*addr) }()
 	if err := s.Open(root); err != nil {

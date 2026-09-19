@@ -16,6 +16,7 @@ usage:
   scrap search [flags] <path> <prefix>         symbol prefix search
   scrap render [flags] <path> <z> <x> <y> <out.png>  render one tile (debugging)
   scrap serve  [flags] [path]                  index and serve the viewer API
+  scrap atlas  [-font file] <out.png>          write the code-font glyph atlas
 
 flags (all commands):
   -precise   run the tree-sitter pass (exact scopes, slower)
@@ -49,6 +50,8 @@ func main() {
 		err = cmdSearch(os.Args[2:])
 	case "render":
 		err = cmdRender(os.Args[2:])
+	case "atlas":
+		err = cmdAtlas(os.Args[2:])
 	case "serve":
 		err = cmdServe(os.Args[2:])
 	default:

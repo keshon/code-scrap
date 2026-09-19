@@ -58,7 +58,7 @@ func cmdRender(args []string) error {
 		x, _ = strconv.Atoi(fs.Arg(2))
 		y, _ = strconv.Atoi(fs.Arg(3))
 	}
-	r := tile.NewRenderer(m, 256<<20)
+	r := tile.NewRenderer(m, nil, 256<<20)
 	out := image.NewRGBA(image.Rect(0, 0, *n*tile.Px, *n*tile.Px))
 	t := time.Now()
 	var wg sync.WaitGroup

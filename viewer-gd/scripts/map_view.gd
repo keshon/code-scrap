@@ -64,6 +64,7 @@ var current_hit := []              # world rect of the focused hit
 var _fly := {}
 
 var _label_font: Font
+var _text: TextLayer
 
 
 class TileRec:
@@ -75,6 +76,7 @@ class TileRec:
 	var label_kinds: PackedByteArray
 	var label_rects: PackedFloat64Array  # world x,y,w,h per label
 	var label_texts: PackedStringArray
+	var blocks: Array  # text blocks in world units: {file, col, seg, rows, x, y, w, h}
 
 
 func _ready() -> void:
@@ -112,6 +114,17 @@ func attach(c: ScrapClient) -> void:
 	client.hello.connect(_on_hello)
 	client.tile_received.connect(_on_tile)
 	client.reply.connect(_on_reply)
+	client.text_received.connect(func(_t): _dirty = true)
+	client.font_ready.connect(func(): _dirty = true)
+	var text_root := Node2D.new()
+	text_root.z_index = 500  # above every tile level
+	add_child(text_root)
+	move_child(_overlay, -1)
+	_text = TextLayer.new(client, text_root, load("res://shaders/text2d.gdshader"), func(mat):
+		var mi := MeshInstance2D.new()
+		mi.mesh = _quad
+		mi.material = mat
+		return mi)
 
 
 # ---------------------------------------------------------------- camera
@@ -235,6 +248,7 @@ func _on_hello(info: Dictionary) -> void:
 	gen = int(info.gen)
 	world = info.world
 	max_z = int(info.maxZ)
+	_text.reset(gen)
 	if first:
 		home(false)
 	_last_request = ""
@@ -303,6 +317,34 @@ func _update_tiles() -> void:
 			rec.node.scale = Vector2(s, s)
 	if _tiles.size() > MAX_CACHED:
 		_evict()
+	_update_text()
+
+
+## Text blocks listed by the visible tiles, biggest text first.
+func _update_text() -> void:
+	var view := Rect2(Vector2.ZERO, size).grow(64)
+	var seen := {}
+	var wanted := []
+	for key: Vector3i in _tiles:
+		var rec: TileRec = _tiles[key]
+		if not rec.node.visible:
+			continue
+		for b in rec.blocks:
+			var k := TextLayer.key_of(b)
+			if seen.has(k):
+				continue
+			seen[k] = true
+			var line_px: float = b.h / b.rows * zoom
+			if line_px < 0.25 or not view.intersects(rect_to_screen([b.x, b.y, b.w, b.h])):
+				continue
+			wanted.append([line_px, b])
+	wanted.sort_custom(func(a, b): return a[0] > b[0])
+	var list := []
+	for w in wanted.slice(0, 220):
+		list.append(w[1])
+	_text.update(list, func(node: Node2D, b: Dictionary):
+		node.position = world_to_screen(b.x, b.y)
+		node.scale = Vector2(b.w * zoom, b.h * zoom))
 
 
 func _evict() -> void:
@@ -343,20 +385,14 @@ func _on_tile(t: Dictionary) -> void:
 		mmi.multimesh = mm
 		mmi.material = _box_mat
 		node.add_child(mmi)
-	if t.has("code"):
-		var img: Image = t.code
-		img.generate_mipmaps()
-		var sp := Sprite2D.new()
-		sp.texture = ImageTexture.create_from_image(img)
-		sp.centered = false
-		sp.scale = Vector2.ONE / TILE_PX
-		sp.material = _code_mat
-		sp.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		node.add_child(sp)
-	# labels → world space
+	# labels and text blocks → world space
 	var ts := 1.0 / (1 << int(t.z))
 	var ox: float = t.x * ts
 	var oy: float = t.y * ts
+	for bl in t.blocks:
+		var br: Rect2 = bl.rect
+		rec.blocks.append({"file": bl.file, "col": bl.col, "seg": bl.seg, "rows": bl.rows,
+			"x": ox + br.position.x * ts, "y": oy + br.position.y * ts, "w": br.size.x * ts, "h": br.size.y * ts})
 	for l in t.labels:
 		var r: Rect2 = l.rect
 		rec.label_ids.append(l.id)
@@ -497,11 +533,15 @@ func _draw_overlay() -> void:
 	_draw_labels()
 	# hover + selection
 	if hover.has("rect") and int(hover.get("node", -1)) >= 0:
-		o.draw_rect(rect_to_screen(hover.rect), Color(0.55, 0.75, 1.0, 0.7), false, 1.0)
+		var hr := rect_to_screen(hover.rect)
+		o.draw_rect(hr, Color(0.55, 0.75, 1.0, 0.06))
+		o.draw_rect(hr, Color(0.55, 0.75, 1.0, 0.7), false, 1.0)
 		if hover.has("lineRect"):
 			o.draw_rect(rect_to_screen(hover.lineRect), Color(0.55, 0.75, 1.0, 0.12))
 	if selection_rect.size() == 4:
-		o.draw_rect(rect_to_screen(selection_rect), Color(0.3, 0.55, 1.0), false, 2.0)
+		var sr := rect_to_screen(selection_rect)
+		o.draw_rect(sr, Color(0.3, 0.55, 1.0, 0.16))
+		o.draw_rect(sr, Color(0.35, 0.62, 1.0), false, 2.0)
 
 
 func _draw_labels() -> void:

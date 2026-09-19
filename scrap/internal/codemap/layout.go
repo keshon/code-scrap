@@ -10,8 +10,11 @@ import (
 const (
 	padFrac    = 0.004 // inner padding
 	headerFrac = 0.020 // label strip on top of dirs and files
-	charAspect = 0.6   // monospace glyph width / line height
-	colGap     = 3     // chars between text columns
+	colGap     = 4     // chars between text columns
+
+	// DefaultCharAspect is a monospace glyph's advance / line height with
+	// IDE-like line spacing (Consolas: 0.55 em advance, 1.36 em lines).
+	DefaultCharAspect = 0.405
 
 	// WorldAspect is the repo rectangle's height/width inside the unit square.
 	WorldAspect = 0.625
@@ -113,6 +116,7 @@ func (m *Map) layoutText(f *File, r Rect) {
 	bestK, bestLH := 1, 0.0
 	// Line height for k columns: lh = min(W / (k*C + (k-1)*gap)*aspect, H / ceil(n/k)).
 	// It is unimodal in k, so scan around the continuous optimum.
+	charAspect := m.charAspect
 	kOpt := math.Sqrt(r.W * float64(n) / (r.H * charAspect * (ColChars + colGap)))
 	lo := max(1, int(kOpt)-3)
 	hi := min(n, int(kOpt)+3)

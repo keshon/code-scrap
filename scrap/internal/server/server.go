@@ -33,6 +33,7 @@ type state struct {
 // Server indexes one root at a time and serves it.
 type Server struct {
 	Options codemap.Options
+	Atlas   *tile.Atlas // glyph atlas for GPU text; sets the layout's char aspect
 
 	cur      atomic.Pointer[state]
 	gen      atomic.Uint32
@@ -43,9 +44,23 @@ type Server struct {
 	progress atomic.Value // last progress message (map[string]any)
 }
 
-// New creates a server; call Open to index a root.
-func New(opt codemap.Options) *Server {
-	return &Server{Options: opt, sessions: map[*session]bool{}}
+// New creates a server; call Open to index a root. fontPath selects the
+// code font ("" = the platform's IDE font, e.g. Consolas on Windows).
+func New(opt codemap.Options, fontPath string) (*Server, error) {
+	atlas, err := tile.LoadAtlas(fontPath)
+	if err != nil {
+		return nil, err
+	}
+	opt.CharAspect = atlas.CharAspect()
+	log.Printf("code font: %s (%d glyphs, %dx%d cells)", fontName(atlas.Font), len(atlas.Runes), atlas.CellW, atlas.CellH)
+	return &Server{Options: opt, Atlas: atlas, sessions: map[*session]bool{}}, nil
+}
+
+func fontName(f string) string {
+	if f == "" {
+		return "Go Mono (embedded)"
+	}
+	return f
 }
 
 // Open indexes root: a fast pass first (served as soon as it's ready), then
@@ -99,7 +114,7 @@ func (s *Server) progressFn(pass string) codemap.Progress {
 }
 
 func (s *Server) install(m *codemap.Map, precise bool) {
-	st := &state{gen: s.gen.Add(1), m: m, renderer: tile.NewRenderer(m, TextCacheBytes), precise: precise}
+	st := &state{gen: s.gen.Add(1), m: m, renderer: tile.NewRenderer(m, s.Atlas, TextCacheBytes), precise: precise}
 	s.cur.Store(st)
 	s.broadcast(hello(st))
 }

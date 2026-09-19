@@ -25,11 +25,18 @@ type session struct {
 	queue []tile.Key
 	qgen  uint32 // state generation the queue was requested for
 	q3D   bool   // queue holds 3D (extruded) tiles
+	texts []textKey
+	tgen  uint32
 	wake  chan struct{}
 }
 
 func newSession(ctx context.Context, s *Server, c *websocket.Conn) *session {
 	return &session{srv: s, c: c, ctx: ctx, wake: make(chan struct{}, 1)}
+}
+
+type textKey struct {
+	file     int32
+	col, seg int
 }
 
 type request struct {
@@ -38,8 +45,9 @@ type request struct {
 	Keys  [][3]int     `json:"keys"`
 	Gen   uint32       `json:"gen"`
 	Dim   int          `json:"dim"`
-	Ray   [6]float64   `json:"ray"` // origin xyz, direction xyz (world units, Y up)
-	Pts   [][2]float64 `json:"pts"` // ground points for "heights"
+	Ray   [6]float64   `json:"ray"`   // origin xyz, direction xyz (world units, Y up)
+	Pts   [][2]float64 `json:"pts"`   // ground points for "heights"
+	Texts [][3]int     `json:"texts"` // text blocks: file node, column, segment
 	Node  int32        `json:"node"`
 	X     float64      `json:"x"`
 	Y     float64      `json:"y"`
@@ -78,6 +86,14 @@ func (ss *session) run(ctx context.Context) {
 			ss.setQueue(req)
 			continue
 		}
+		if req.Op == "texts" {
+			ss.setTexts(req)
+			continue
+		}
+		if req.Op == "font" {
+			go ss.writeBinary(encodeFont(ss.srv.Atlas))
+			continue
+		}
 		go ss.handle(req)
 	}
 	cancel()
@@ -104,20 +120,48 @@ func (ss *session) setQueue(req request) {
 	}
 }
 
-func (ss *session) next() (tile.Key, uint32, bool, bool) {
+func (ss *session) setTexts(req request) {
+	keys := make([]textKey, 0, len(req.Texts))
+	for _, k := range req.Texts {
+		keys = append(keys, textKey{int32(k[0]), k[1], k[2]})
+	}
+	ss.mu.Lock()
+	ss.texts = keys
+	ss.tgen = req.Gen
+	ss.mu.Unlock()
+	select {
+	case ss.wake <- struct{}{}:
+	default:
+	}
+}
+
+// work is one queued job: a tile, or (when no tiles wait) a text block.
+type work struct {
+	tile tile.Key
+	is3D bool
+	text *textKey
+	gen  uint32
+}
+
+func (ss *session) next() (work, bool) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	if len(ss.queue) == 0 {
-		return tile.Key{}, 0, false, false
+	if len(ss.queue) > 0 {
+		k := ss.queue[0]
+		ss.queue = ss.queue[1:]
+		return work{tile: k, is3D: ss.q3D, gen: ss.qgen}, true
 	}
-	k := ss.queue[0]
-	ss.queue = ss.queue[1:]
-	return k, ss.qgen, ss.q3D, true
+	if len(ss.texts) > 0 {
+		k := ss.texts[0]
+		ss.texts = ss.texts[1:]
+		return work{text: &k, gen: ss.tgen}, true
+	}
+	return work{}, false
 }
 
 func (ss *session) tileWorker(ctx context.Context) {
 	for {
-		k, gen, is3D, ok := ss.next()
+		w, ok := ss.next()
 		if !ok {
 			select {
 			case <-ctx.Done():
@@ -129,10 +173,16 @@ func (ss *session) tileWorker(ctx context.Context) {
 			}
 		}
 		st := ss.srv.cur.Load()
-		if st == nil || st.gen != gen {
+		if st == nil || st.gen != w.gen {
 			continue // requested against a map that has been replaced
 		}
-		ss.writeBinary(encodeTile(st, k, is3D))
+		if w.text != nil {
+			if b := encodeText(st, *w.text); b != nil {
+				ss.writeBinary(b)
+			}
+			continue
+		}
+		ss.writeBinary(encodeTile(st, w.tile, w.is3D))
 	}
 }
 

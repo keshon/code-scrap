@@ -15,16 +15,18 @@ const (
 	glyphCodePx = 7    // at or above: real glyphs instead of dashes
 )
 
-// Renderer draws raster code tiles for one map.
+// Renderer produces text data for one map: GPU text blocks for the viewers,
+// and raster code tiles for previews.
 type Renderer struct {
 	Map    *codemap.Map
 	Texts  *Texts
 	Glyphs *Glyphs
+	Atlas  *Atlas
 }
 
 // NewRenderer creates a renderer with a text cache of the given size.
-func NewRenderer(m *codemap.Map, textCacheBytes int) *Renderer {
-	return &Renderer{Map: m, Texts: NewTexts(m, textCacheBytes), Glyphs: NewGlyphs()}
+func NewRenderer(m *codemap.Map, atlas *Atlas, textCacheBytes int) *Renderer {
+	return &Renderer{Map: m, Texts: NewTexts(m, textCacheBytes), Glyphs: NewGlyphs(), Atlas: atlas}
 }
 
 // Code renders the code layer of tile k as a transparent RGBA image, or

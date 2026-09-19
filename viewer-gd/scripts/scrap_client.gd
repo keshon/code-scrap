@@ -8,6 +8,8 @@ signal progress(info: Dictionary)
 signal tile_received(tile: Dictionary)
 signal reply(id: int, data: Dictionary)
 signal connection_changed(connected: bool)
+signal text_received(block: Dictionary)
+signal font_ready
 
 const TILE_PX := 256
 
@@ -24,6 +26,12 @@ var _attempts := 0
 var _connect_started := 0.0
 var _repo_explicit := false
 var _open_sent := false
+
+# GPU text: the glyph atlas (shared by every text block) and block geometry
+var atlas_tex: Texture2D
+var atlas_grid := Vector2(32, 14)
+var col_chars := 100
+var tex_w := 128
 
 
 func _ready() -> void:
@@ -125,6 +133,12 @@ func request(op: String, params: Dictionary = {}) -> int:
 	return id
 
 
+## Replaces the server's text-block queue ([file node, column, segment]).
+func request_texts(gen: int, keys: Array) -> void:
+	if _connected:
+		_ws.send_text(JSON.stringify({"op": "texts", "gen": gen, "texts": keys}))
+
+
 ## Replaces the server's tile queue (keys ordered by priority).
 ## dim 2 = flat boxes, 3 = extruded boxes for the city view.
 func request_tiles(gen: int, keys: Array, dim := 2) -> void:
@@ -143,6 +157,11 @@ func _on_text(s: String) -> void:
 			if _repo_explicit and not _open_sent and _norm(data.get("root", "")) != _norm(repo):
 				_open_sent = true
 				request("open", {"path": repo})
+			if data.has("text"):
+				col_chars = int(data.text.colChars)
+				tex_w = int(data.text.texW)
+			if atlas_tex == null and _connected:
+				_ws.send_text(JSON.stringify({"op": "font"}))
 			hello.emit(data)
 		"progress":
 			progress.emit(data)
@@ -156,6 +175,12 @@ func _norm(p: String) -> String:
 
 func _on_binary(b: PackedByteArray) -> void:
 	var typ := b.decode_u8(0)
+	if typ == 3:
+		_on_text_block(b)
+		return
+	if typ == 4:
+		_on_font(b)
+		return
 	if b.size() < 24 or (typ != 1 and typ != 2):
 		return
 	var t := {}
@@ -186,6 +211,41 @@ func _on_binary(b: PackedByteArray) -> void:
 		off += 27 + ln
 		labels.append(l)
 	t.labels = labels
-	if flags & 1:
-		t.code = Image.create_from_data(TILE_PX, TILE_PX, false, Image.FORMAT_RGBA8, b.slice(off, off + TILE_PX * TILE_PX * 4))
+	var blocks := []
+	var nb := b.decode_u32(off)
+	off += 4
+	for i in nb:
+		blocks.append({
+			"file": b.decode_s32(off), "col": b.decode_u16(off + 4), "seg": b.decode_u16(off + 6),
+			"rows": b.decode_u16(off + 8),
+			"rect": Rect2(b.decode_float(off + 10), b.decode_float(off + 14), b.decode_float(off + 18), b.decode_float(off + 22)),
+			"top": b.decode_float(off + 26),
+		})
+		off += 30
+	t.blocks = blocks
 	tile_received.emit(t)
+
+
+func _on_text_block(b: PackedByteArray) -> void:
+	var t := {}
+	t.col = b.decode_u16(2)
+	t.file = b.decode_s32(4)
+	t.seg = b.decode_u16(8)
+	t.rows = b.decode_u16(10)
+	t.gen = b.decode_u32(12)
+	var n: int = tex_w * t.rows
+	t.color = Image.create_from_data(tex_w, t.rows, false, Image.FORMAT_RGBA8, b.slice(16, 16 + n * 4))
+	t.glyph = Image.create_from_data(tex_w, t.rows, false, Image.FORMAT_RG8, b.slice(16 + n * 4, 16 + n * 6))
+	text_received.emit(t)
+
+
+func _on_font(b: PackedByteArray) -> void:
+	var cols := b.decode_u16(2)
+	var rows := b.decode_u16(4)
+	var cw := b.decode_u16(6)
+	var ch := b.decode_u16(8)
+	var img := Image.create_from_data(cols * cw, rows * ch, false, Image.FORMAT_L8, b.slice(10))
+	img.generate_mipmaps()
+	atlas_tex = ImageTexture.create_from_image(img)
+	atlas_grid = Vector2(cols, rows)
+	font_ready.emit()

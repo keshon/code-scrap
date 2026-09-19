@@ -24,9 +24,10 @@ type Progress func(phase string, done, total int)
 
 // Options control what gets indexed and how.
 type Options struct {
-	SortByName bool // stable alphabetical placement instead of largest-first
-	Precise    bool // run the tree-sitter pass (slower, exact scopes)
-	NoGit      bool // ignore git and walk the file system
+	SortByName bool    // stable alphabetical placement instead of largest-first
+	Precise    bool    // run the tree-sitter pass (slower, exact scopes)
+	NoGit      bool    // ignore git and walk the file system
+	CharAspect float64 // glyph width / line height of the text font (0 = default)
 	Progress   Progress
 }
 
@@ -144,6 +145,10 @@ func Build(root string, opt Options) (*Map, error) {
 	}
 
 	m := assemble(abs, top, files, opt)
+	m.charAspect = opt.CharAspect
+	if m.charAspect <= 0 {
+		m.charAspect = DefaultCharAspect
+	}
 	m.Stats.IndexMs = time.Since(t0).Milliseconds()
 	t1 := time.Now()
 	m.layout()

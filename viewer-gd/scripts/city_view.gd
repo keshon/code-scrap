@@ -13,7 +13,7 @@ signal exited(cx: float, cy: float, zoom: float)
 
 const S := 1000.0            # render units per world unit
 const TILE_PX := 256.0
-const MAX_TILES := 240
+const MAX_TILES := 420
 const MAX_CACHED := 600
 const FOV := 50.0
 const LABEL_FONT_SIZE := 12
@@ -53,6 +53,11 @@ var _dirty := true
 var _frame := 0
 var _last_request := ""
 var _label_font: Font
+var _text: TextLayer
+var _plane: ArrayMesh
+var _sel_xray: MeshInstance3D
+var _sel_fill: MeshInstance3D
+var _hov_xray: MeshInstance3D
 
 var _pressed := -1
 var _dragging := false
@@ -80,6 +85,7 @@ class Rec:
 	var label_kinds: PackedByteArray
 	var label_data: PackedFloat64Array  # world x, y, w, h, top
 	var label_texts: PackedStringArray
+	var blocks: Array  # text blocks in world units: {file, col, seg, rows, x, y, w, h, top}
 
 
 func _ready() -> void:
@@ -125,7 +131,42 @@ func _ready() -> void:
 	add_child(_overlay)
 
 	_cube = _make_cube()
+	_plane = _make_plane()
+	_sel_fill = _highlight("res://shaders/highlight_fill.gdshader", {})
+	_sel_xray = _highlight("res://shaders/highlight_xray.gdshader", {"color": Color(0.4, 0.7, 1.0, 1.0), "width_px": 2.0, "face_alpha": 0.04})
+	_hov_xray = _highlight("res://shaders/highlight_xray.gdshader", {"color": Color(0.6, 0.8, 1.0, 0.55), "width_px": 1.0, "face_alpha": 0.0})
 	resized.connect(func(): _dirty = true)
+
+
+func _highlight(shader_path: String, params: Dictionary) -> MeshInstance3D:
+	var mat := ShaderMaterial.new()
+	mat.shader = load(shader_path)
+	for k in params:
+		mat.set_shader_parameter(k, params[k])
+	var mi := MeshInstance3D.new()
+	mi.mesh = _cube
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visible = false
+	_root3d.add_child(mi)
+	return mi
+
+
+## Flat unit quad on the XZ plane, facing up, uv = (x, z).
+func _make_plane() -> ArrayMesh:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	var c := [Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(1, 0, 1), Vector3(0, 0, 1)]
+	var v := PackedVector3Array()
+	var uv := PackedVector2Array()
+	for i in [0, 1, 2, 0, 2, 3]:
+		v.append(c[i])
+		uv.append(Vector2(c[i].x, c[i].z))
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return m
 
 
 func attach(c: ScrapClient) -> void:
@@ -133,6 +174,16 @@ func attach(c: ScrapClient) -> void:
 	client.hello.connect(_on_hello)
 	client.tile_received.connect(_on_tile)
 	client.reply.connect(_on_reply)
+	client.text_received.connect(func(_t): _dirty = true)
+	client.font_ready.connect(func(): _dirty = true)
+	var text_root := Node3D.new()
+	_root3d.add_child(text_root)
+	_text = TextLayer.new(client, text_root, load("res://shaders/text3d.gdshader"), func(mat):
+		var mi := MeshInstance3D.new()
+		mi.mesh = _plane
+		mi.material_override = mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		return mi)
 
 
 ## Unit cube [0,1]³ without a bottom face; every face has its own 0..1 UVs
@@ -338,6 +389,7 @@ func _on_hello(info: Dictionary) -> void:
 	world = info.world
 	max_z = int(info.maxZ)
 	max_top = float(info.get("maxTop", 0.05))
+	_text.reset(gen)
 	_last_request = ""
 	_dirty = true
 
@@ -350,13 +402,18 @@ func _update_tiles() -> void:
 	var planes := _cam.get_frustum()
 	var cam_pos := _cam.global_position
 	var chosen := []
-	var queue := [Vector3i(0, 0, 0)]
+	var queue := [[INF, Vector3i(0, 0, 0)]]  # [on-screen px, key]
 	var wx0: float = world[0]
 	var wy0: float = world[1]
 	var wx1: float = world[0] + world[2]
 	var wy1: float = world[1] + world[3]
 	while not queue.is_empty():
-		var k: Vector3i = queue.pop_front()
+		var best := 0
+		for i in queue.size():
+			if queue[i][0] > queue[best][0]:
+				best = i
+		var k: Vector3i = queue[best][1]
+		queue.remove_at(best)
 		var ts := 1.0 / (1 << k.x)
 		var x0: float = k.y * ts
 		var y0: float = k.z * ts
@@ -372,7 +429,7 @@ func _update_tiles() -> void:
 		if px > TILE_PX * 1.15 and k.x < max_z and chosen.size() + queue.size() + 4 <= MAX_TILES:
 			for j in 2:
 				for i in 2:
-					queue.append(Vector3i(k.x + 1, k.y * 2 + i, k.z * 2 + j))
+					queue.append([px * 0.5, Vector3i(k.x + 1, k.y * 2 + i, k.z * 2 + j)])
 		else:
 			chosen.append([d, k])
 	chosen.sort_custom(func(p, q): return p[0] < q[0])
@@ -409,9 +466,9 @@ func _update_tiles() -> void:
 			rec.used = _frame
 			var ts := 1.0 / (1 << key.x)
 			rec.node.position = _world_to_render(key.y * ts, 0.0, key.z * ts)
-			# finer levels stand a hair taller, so a coarse fallback tile under
-			# them never z-fights with their coplanar roofs
-			rec.node.scale = Vector3(ts * S, ts * S * (1.0 + key.x * 0.004), ts * S)
+			rec.node.scale = Vector3.ONE * ts * S
+	_update_text(cam_pos)
+	_update_highlights()
 	if _tiles.size() > MAX_CACHED:
 		var recs := _tiles.values()
 		recs.sort_custom(func(p, q): return p.used < q.used)
@@ -420,6 +477,53 @@ func _update_tiles() -> void:
 			if not rec.node.visible:
 				rec.node.queue_free()
 				_tiles.erase(rec.key)
+
+
+## Text blocks listed by the visible tiles, biggest text on screen first.
+func _update_text(cam_pos: Vector3) -> void:
+	var seen := {}
+	var wanted := []
+	for key: Vector3i in _tiles:
+		var rec: Rec = _tiles[key]
+		if not rec.node.visible:
+			continue
+		for b in rec.blocks:
+			var k := TextLayer.key_of(b)
+			if seen.has(k):
+				continue
+			seen[k] = true
+			var c := _world_to_render(b.x + b.w * 0.5, b.top, b.y + b.h * 0.5)
+			var near := Vector3(clamp(cam_pos.x, c.x - b.w * S * 0.5, c.x + b.w * S * 0.5), c.y,
+				clamp(cam_pos.z, c.z - b.h * S * 0.5, c.z + b.h * S * 0.5))
+			var d: float = max(cam_pos.distance_to(near) / S, 1e-12)
+			var line_px: float = b.h / b.rows * _ppu(d)
+			if line_px >= 0.25:
+				wanted.append([line_px, b])
+	wanted.sort_custom(func(a, b): return a[0] > b[0])
+	var list := []
+	for w in wanted.slice(0, 220):
+		list.append(w[1])
+	_text.update(list, func(node: Node3D, b: Dictionary):
+		node.position = _world_to_render(b.x, b.top, b.y)
+		node.scale = Vector3(b.w * S, 1.0, b.h * S))
+
+
+func _place_box(mi: MeshInstance3D, r: Array, top: float, grow := 0.0) -> void:
+	var g: float = max(r[2], r[3]) * grow
+	mi.position = _world_to_render(r[0] - g, 0.0, r[1] - g)
+	mi.scale = Vector3((r[2] + 2.0 * g) * S, max(top * (1.0 + grow), 1e-9) * S, (r[3] + 2.0 * g) * S)
+
+
+func _update_highlights() -> void:
+	_sel_xray.visible = not selection.is_empty()
+	_sel_fill.visible = _sel_xray.visible
+	if _sel_xray.visible:
+		_place_box(_sel_xray, selection.rect, selection.top)
+		_place_box(_sel_fill, selection.rect, selection.top)
+	var hv := hover.has("rect") and int(hover.get("node", -1)) >= 0
+	_hov_xray.visible = hv
+	if hv:
+		_place_box(_hov_xray, hover.rect, float(hover.get("top", 0.0)))
 
 
 func _outside(planes: Array[Plane], a: Vector3, b: Vector3) -> bool:
@@ -463,15 +567,15 @@ func _on_tile(t: Dictionary) -> void:
 		var mat := ShaderMaterial.new()
 		mat.shader = _shader
 		mat.set_shader_parameter("tile_scale", ts * S)
-		if t.has("code"):
-			var img: Image = t.code
-			img.generate_mipmaps()
-			mat.set_shader_parameter("code_tex", ImageTexture.create_from_image(img))
-			mat.set_shader_parameter("has_code", true)
+		mat.set_shader_parameter("level", float(t.z))
 		mmi.material_override = mat
 		node.add_child(mmi)
 	var ox: float = t.x * ts
 	var oy: float = t.y * ts
+	for bl in t.blocks:
+		var br: Rect2 = bl.rect
+		rec.blocks.append({"file": bl.file, "col": bl.col, "seg": bl.seg, "rows": bl.rows,
+			"x": ox + br.position.x * ts, "y": oy + br.position.y * ts, "w": br.size.x * ts, "h": br.size.y * ts, "top": bl.top * ts})
 	for l in t.labels:
 		var r: Rect2 = l.rect
 		rec.label_ids.append(l.id)
@@ -597,12 +701,14 @@ func _on_reply(id: int, data: Dictionary) -> void:
 			data["hit"] = [r[0] + r[3] * t, r[1] + r[4] * t, r[2] + r[5] * t]
 		hover = data
 		hovered.emit(data)
+		_update_highlights()
 		_overlay.queue_redraw()
 
 
 func select(id: int, rect: Array, top: float) -> void:
 	selection = {"rect": rect, "top": top}
 	selected.emit(id)
+	_update_highlights()
 	_overlay.queue_redraw()
 
 
@@ -629,16 +735,6 @@ func _draw_overlay() -> void:
 		if pts.size() == 4:
 			o.draw_colored_polygon(pts, Color(HIT_COLOR, 0.5))
 	_draw_labels()
-	if hover.has("rect") and int(hover.get("node", -1)) >= 0:
-		var pts := _project_roof(hover.rect, float(hover.get("top", 0.0)))
-		if pts.size() == 4:
-			pts.append(pts[0])
-			o.draw_polyline(pts, Color(0.55, 0.75, 1.0, 0.8), 1.0)
-	if not selection.is_empty():
-		var pts := _project_roof(selection.rect, selection.top)
-		if pts.size() == 4:
-			pts.append(pts[0])
-			o.draw_polyline(pts, Color(0.3, 0.55, 1.0), 2.0)
 
 
 func _draw_labels() -> void:

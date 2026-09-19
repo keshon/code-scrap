@@ -50,6 +50,7 @@ type Boxes struct {
 	Stride    int
 	IDs       []int32
 	Labels    []Label
+	Blocks    []Block
 	is3D      bool
 }
 
@@ -83,7 +84,8 @@ func BoxTile(m *codemap.Map, k Key, is3D bool) *Boxes {
 			}
 		case codemap.KindFile:
 			f := &m.Files[n.File]
-			if f.LH*scale >= 1.2 && !is3D {
+			b.blocks(m, n, f, tr, scale)
+			if f.LH*scale >= 1.2 {
 				for _, sid := range f.Scopes {
 					b.addScope(m, sid, f, tr, scale)
 				}

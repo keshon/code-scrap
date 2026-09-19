@@ -102,6 +102,8 @@ type Map struct {
 	Symbols []Symbol // sorted by Lower, then path, then line
 	World   Rect     // repo bounds in world space
 	Stats   Stats
+
+	charAspect float64
 }
 
 type Stats struct {
