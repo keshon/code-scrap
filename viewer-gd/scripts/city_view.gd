@@ -40,9 +40,7 @@ var _cam: Camera3D
 var _env: Environment
 var _tiles_root: Node3D
 var _overlay: Control
-var _cube: ArrayMesh          # plain unit cube: highlights
-var _box: ArrayMesh           # bevelled box: city tiles
-var _box_seg := -1
+var _cube: ArrayMesh
 var _shader: Shader
 var _origin := [0.5, 0.3]    # floating origin (world x, y)
 var _tiles := {}             # Vector3i -> Rec
@@ -175,7 +173,6 @@ func _ready() -> void:
 	add_child(_overlay)
 
 	_cube = _make_cube()
-	_rebuild_box()
 	_plane = _make_plane()
 	_sel_fill = _highlight("res://shaders/highlight_fill.gdshader", {})
 	_sel_mask = _silhouette("res://shaders/silhouette_mask.gdshader", 1, 20)
@@ -236,24 +233,8 @@ func _fit_viewport() -> void:
 	_dirty = true
 
 
-## The tile box mesh follows the rounded-edge setting (more segments for a
-## bigger radius); tiles already loaded switch to the new mesh.
-func _rebuild_box() -> void:
-	var seg := _box_segments()
-	if seg == _box_seg:
-		return
-	_box_seg = seg
-	_box = _make_box(seg)
-	for key in _tiles:
-		for c in _tiles[key].node.get_children():
-			if c is MultiMeshInstance3D:
-				c.multimesh.mesh = _box
-
-
 ## Re-reads the settings this view uses; cheap, so any change calls it.
 func _apply_settings() -> void:
-	if _box:
-		_rebuild_box()
 	_fov = Settings.get_value("camera.fov")
 	_cam.fov = _fov
 	if _ground:
@@ -417,62 +398,6 @@ func _make_cube() -> ArrayMesh:
 	var m := ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return m
-
-
-## A box for the city tiles, shaped in the vertex shader (city.gdshader):
-## rounded vertical edges, seg segments per corner. Every vertex sits on a
-## unit-box corner (VERTEX x, z in {0, 1}) and carries its arc direction
-## (UV) and ring (UV2.x): 0 wall bottom · 1 wall top · 2 roof. The shader
-## turns the radius (world units, per box size) into offsets, so one mesh
-## serves every box and the rounding stays circular.
-static func _make_box(seg: int) -> ArrayMesh:
-	var v := PackedVector3Array()
-	var uv := PackedVector2Array()
-	var uv2 := PackedVector2Array()
-	var nrm := PackedVector3Array()
-	var idx := PackedInt32Array()
-	# corners in ring order (the roof's front-facing winding) and arc starts
-	var corners := [[Vector2(1, 0), -90.0], [Vector2(1, 1), 0.0], [Vector2(0, 1), 90.0], [Vector2(0, 0), 180.0]]
-	var rings := []   # ring type -> first vertex index
-	for ring in 3:
-		rings.append(v.size())
-		for c in corners:
-			for k in seg + 1:
-				var a := deg_to_rad(c[1] + 90.0 * k / seg)
-				v.append(Vector3(c[0].x, 1.0 if ring > 0 else 0.0, c[0].y))
-				uv.append(Vector2(cos(a), sin(a)))
-				uv2.append(Vector2(ring, 0))
-				nrm.append(Vector3.UP)   # the shader sets real normals
-	var n := 4 * (seg + 1)
-	var quad := func(lo: int, hi: int):
-		for i in n:
-			var j := (i + 1) % n
-			var b0 := lo + i
-			var b1 := lo + j
-			var t0 := hi + i
-			var t1 := hi + j
-			idx.append_array([b1, t1, t0, b1, t0, b0])
-	quad.call(rings[0], rings[1])   # walls
-	for i in range(1, n - 1):       # roof: a fan
-		idx.append_array([rings[2], rings[2] + i, rings[2] + i + 1])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = v
-	arrays[Mesh.ARRAY_NORMAL] = nrm
-	arrays[Mesh.ARRAY_TEX_UV] = uv
-	arrays[Mesh.ARRAY_TEX_UV2] = uv2
-	arrays[Mesh.ARRAY_INDEX] = idx
-	var m := ArrayMesh.new()
-	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	# the shader moves vertices by up to the box size: keep culling safe
-	m.custom_aabb = AABB(Vector3(-0.1, -0.1, -0.1), Vector3(1.2, 1.2, 1.2))
-	return m
-
-
-## Segments per rounded corner: more as the radius grows.
-static func _box_segments() -> int:
-	var r: float = Settings.get_value("look.edge_bevel")
-	return 1 if r <= 0.0 else clampi(int(ceil(r / 0.25 * 8.0)) + 1, 2, 8)
 
 
 # ---------------------------------------------------------------- camera
@@ -925,7 +850,7 @@ func _on_tile(t: Dictionary) -> void:
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
 		mm.use_custom_data = true
-		mm.mesh = _box
+		mm.mesh = _cube
 		mm.instance_count = ids.size()
 		mm.buffer = t.buffer
 		var mmi := MultiMeshInstance3D.new()

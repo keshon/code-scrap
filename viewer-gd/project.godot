@@ -123,10 +123,6 @@ scrap_roof_diffuse={
 "type": "float",
 "value": 0.0
 }
-scrap_edge_bevel={
-"type": "float",
-"value": 0.03
-}
 scrap_sel_box={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)

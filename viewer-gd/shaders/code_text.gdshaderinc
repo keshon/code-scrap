@@ -32,7 +32,12 @@ vec4 code_text(vec2 uv) {
 
 	// dashes: the mipmapped color texture, barred vertically while lines are
 	// a few pixels tall so they read as separate lines
-	vec4 dash = texture(color_tex, vec2(p.x / tex_w, p.y / rows));
+	// one blur level for both directions: the GPU's anisotropic choice
+	// changes with the viewing angle and makes far text blotchy, so the
+	// same patch would look different from every side
+	vec2 uv_d = vec2(p.x / tex_w, p.y / rows);
+	float g = max(max(abs(dFdx(uv_d).x), abs(dFdy(uv_d).x)), max(abs(dFdx(uv_d).y), abs(dFdy(uv_d).y)));
+	vec4 dash = textureGrad(color_tex, uv_d, vec2(g, 0.0), vec2(0.0, g));
 	float fy = fract(p.y);
 	float aa = min(dp.y, 0.5);
 	float bar = smoothstep(0.2 - aa, 0.2 + aa, fy) * (1.0 - smoothstep(0.8 - aa, 0.8 + aa, fy));

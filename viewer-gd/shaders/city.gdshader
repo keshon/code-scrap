@@ -6,11 +6,6 @@ render_mode unshaded, cull_back, depth_draw_opaque;
 // COLOR = the area's hue. Kind 2 (code scopes) draws only an outline on the
 // roof of its file; the code itself is a separate GPU text layer.
 //
-// Geometry: the mesh (CityView._make_box) is a unit box whose vertices know
-// their corner, arc direction and ring. Here they are moved, in world units,
-// into rounded vertical edges — only at the box's real corners, not where a
-// tile cut it.
-//
 // Shading is done here rather than by Godot's lights, so it stays cheap and
 // tunable (Settings → Look): ambient + one light (a headlight that follows
 // the camera, or a fixed sun), specular highlights, contact shading toward
@@ -29,7 +24,6 @@ global uniform float scrap_ambient;
 global uniform float scrap_specular;
 global uniform float scrap_gloss;
 global uniform float scrap_roof_diffuse;  // 0 all roofs, 1 selected only, 2 none
-global uniform float scrap_edge_bevel;    // corner radius / box's shorter side
 global uniform float scrap_contact;
 global uniform float scrap_flat;          // 1 = no shading
 // selection and hover, in render space: box (x, z, w, h), roof height, tint
@@ -44,7 +38,7 @@ global uniform vec4 scrap_hov_tint;
 
 varying flat vec4 v_custom;
 varying flat vec4 v_hue;
-varying flat vec4 v_dims;     // box size x, z (render), 0, corner radius
+varying flat vec4 v_dims;     // box size x, z (render units)
 varying flat float v_sel;     // 1 = this piece belongs to the selected box
 varying flat float v_hov;
 varying vec3 v_local;         // position in the piece: x, z in render units, y = height 0..1
@@ -65,42 +59,24 @@ float matches(vec3 o, vec3 s, vec4 b, float top) {
 void vertex() {
 	v_custom = INSTANCE_CUSTOM;
 	v_hue = COLOR;
-	vec3 sx = MODEL_MATRIX[0].xyz;
-	vec3 sy = MODEL_MATRIX[1].xyz;
-	vec3 sz = MODEL_MATRIX[2].xyz;
-	vec3 size = vec3(length(sx), length(sy), length(sz));
+	vec3 size = vec3(length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz), length(MODEL_MATRIX[2].xyz));
 	vec3 origin = MODEL_MATRIX[3].xyz;
-	int edges = int(INSTANCE_CUSTOM.x + 0.5);
 	bool scope = INSTANCE_CUSTOM.y > 1.5;
-	float m = min(size.x, size.z);
-	float R = scope ? 0.0 : min(scrap_edge_bevel * m, 0.49 * m);
-	int ring = int(UV2.x + 0.5);
-	vec2 corner = VERTEX.xz;
-	vec2 dir = UV;
-	// which sides at this corner are the box's real edges
-	bool xr = corner.x < 0.5 ? (edges & 1) != 0 : (edges & 4) != 0;
-	bool zr = corner.y < 0.5 ? (edges & 2) != 0 : (edges & 8) != 0;
-	vec2 inward = vec2(corner.x < 0.5 ? 1.0 : -1.0, corner.y < 0.5 ? 1.0 : -1.0);
-	float rc = xr && zr ? R : 0.0;
-	vec2 off = inward * rc + dir * rc;
-	float y = ring == 0 ? 0.0 : size.y;
-	vec3 n = ring == 2 ? vec3(0.0, 1.0, 0.0) : vec3(dir.x, 0.0, dir.y);
-	vec3 local = vec3(corner.x * size.x + off.x, y, corner.y * size.z + off.y);
-	vec3 wp = origin + vec3(local.x, local.y, local.z);
-	if (ring >= 1) {
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	if (VERTEX.y > 0.5) {
 		// Roofs are lifted toward the viewer by a fraction of the distance,
 		// ordering coplanar layers without z-fighting: finer tile levels over
 		// a coarse fallback tile (≤0.05%), scope outlines (0.07%), then the
 		// text layer (0.12%, in text3d.gdshader).
 		float k = scope ? 7e-4 : 2e-5 * level;
 		wp.y += distance(wp, CAMERA_POSITION_WORLD) * k;
+		VERTEX = (inverse(MODEL_MATRIX) * vec4(wp, 1.0)).xyz;
 	}
-	VERTEX = (inverse(MODEL_MATRIX) * vec4(wp, 1.0)).xyz;
-	v_local = vec3(local.x, local.z, y / max(size.y, 1e-9));
-	v_dims = vec4(size.x, size.z, 0.0, R);
-	v_wnormal = n;
+	v_local = vec3(VERTEX.x * size.x, VERTEX.z * size.z, VERTEX.y);
+	v_dims = vec4(size.x, size.z, 0.0, 0.0);
+	v_wnormal = NORMAL;   // the cube is axis aligned and not rotated
 	v_wpos = wp;
-	v_ring = float(ring);
+	v_ring = NORMAL.y > 0.5 ? 2.0 : 0.0;
 	v_sel = scope ? 0.0 : matches(origin, size, scrap_sel_box, scrap_sel_top);
 	v_hov = scope ? 0.0 : matches(origin, size, scrap_hov_box, scrap_hov_top);
 }
@@ -125,7 +101,6 @@ float specular(vec3 n, vec3 l, vec3 v) {
 void fragment() {
 	vec3 hue = v_hue.rgb;
 	float kind = v_custom.y;
-	// v_ring interpolates across a face: walls span 0..1, the roof is 2
 	bool roof = v_ring > 1.5;
 	if (kind > 1.5 && !roof) {
 		discard;
@@ -152,8 +127,7 @@ void fragment() {
 			}
 			c = hue * 0.8;
 		} else {
-			// distance to the roof's edge (rounded at real corners), in pixels
-			float rr = v_dims.w;
+			// distance to the roof's real edges, in pixels
 			float big_ = 1e9;
 			float dl = (edges & 1) != 0 ? p.x : big_;
 			float dr = (edges & 4) != 0 ? v_dims.x - p.x : big_;
@@ -162,10 +136,6 @@ void fragment() {
 			float dx = min(dl, dr);
 			float dz = min(dt, db);
 			float d = min(dx / pw.x, dz / pw.y);
-			if (rr > 0.0 && dx < rr && dz < rr) {
-				vec2 q = vec2(rr - dx, rr - dz) / pw;
-				d = rr / pw.x - length(q);
-			}
 			float line = (1.0 - smoothstep(w - 0.45, w + 0.45, d)) * show;
 			float big = smoothstep(8.0, 90.0, true_px);
 			// 3D colors are linear: the same lift looks ~4x stronger than in 2D

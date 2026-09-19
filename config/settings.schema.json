@@ -550,16 +550,6 @@
           "desc": "Keep specular off the top planes (where the code is): all roofs · only the selected box · none."
         },
         {
-          "id": "look.edge_bevel",
-          "type": "float",
-          "default": 0.03,
-          "min": 0.0,
-          "max": 0.25,
-          "step": 0.005,
-          "label": "Rounded edges",
-          "desc": "Radius of the vertical box edges, relative to each box's shorter side. More segments are used as the radius grows. 0 = sharp."
-        },
-        {
           "id": "look.light_yaw",
           "type": "float",
           "default": 35.0,

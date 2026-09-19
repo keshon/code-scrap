@@ -49,7 +49,6 @@ const SHADER_GLOBALS := {
 	"look.specular": ["scrap_specular", "f"],
 	"look.gloss": ["scrap_gloss", "f"],
 	"look.roof_diffuse": ["scrap_roof_diffuse", "e"],  # 0 all, 1 selected, 2 none
-	"look.edge_bevel": ["scrap_edge_bevel", "f"],
 	"look.light_yaw": ["", "light"],
 	"look.light_pitch": ["", "light"],
 }

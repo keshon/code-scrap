@@ -293,7 +293,7 @@ A viewport overlay (bottom-right, collapsible) generated from what's active: col
 | # | Point | Done |
 |---|---|---|
 | 1 | Volume hard to read; specular control | Settings → Look: **Light follows** camera (a headlight, as in Softimage) or world (a sun); ambient; specular strength and glossiness |
-| 2 | Bevels on vertical edges | Rounded vertical edges with a radius setting; the segment count grows with the radius. Real geometry, shaped per box in the vertex shader, only at real corners. The 2D map rounds its corners from the same setting. The cap chamfer was tried and dropped (not worth its trouble); the fake roof-band bevel is gone |
+| 2 | Bevels | Tried and dropped, in 3D and 2D alike: rounded vertical edges (shaped per box in the vertex shader) and a roof chamfer both left visible seams where roof and walls meet, and weren't worth the complexity. Boxes are plain; the fake roof-band bevel is gone too |
 | 3 | Selection: tint or a clean outline | Styles: **silhouette** (one outline around the box, no inner edges, drawn over everything, stencil based) · tint (the box itself glows) · both · off. The same for hover |
 | 4 | Diffuse-only top planes | **Diffuse-only roofs**: all · selected only · none |
 | 5 | Code glued to the left edge | A gutter: line numbers (☰ → Line numbers) or 2 characters of padding. Scope outlines and search hits start after it (server, protocol v7) |
@@ -309,7 +309,9 @@ A viewport overlay (bottom-right, collapsible) generated from what's active: col
 | 17 | Paddings | Panels with scrolling content (Explorer, right pane) keep the scrollbar close to the edge |
 | 18 | Map order is incomprehensible | View tab → **Layout**: order (size · name · folders first) and algorithm (squarified, or **strip**: rows in reading order). Squarified alternates vertical and horizontal strips, which is why its order looked random |
 
-Next, to decide together: the "colored roofs" look from the early screenshot (see the end of this review).
+Also: far code text looked blotchy and changed with the viewing angle (the GPU's anisotropic filtering picked different blur levels per direction). Dashes now use one blur level for both directions, and text on roofs seen nearly edge-on fades out.
+
+Next, to decide together: the "colored roofs" look from the early screenshot.
 
 ---
 
