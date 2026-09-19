@@ -309,7 +309,7 @@ A viewport overlay (bottom-right, collapsible) generated from what's active: col
 | 17 | Paddings | Panels with scrolling content (Explorer, right pane) keep the scrollbar close to the edge |
 | 18 | Map order is incomprehensible | View tab → **Layout**: order (size · name · folders first) and algorithm (squarified, or **strip**: rows in reading order). Squarified alternates vertical and horizontal strips, which is why its order looked random |
 
-Also: far code text looked blotchy and changed with the viewing angle (the GPU's anisotropic filtering picked different blur levels per direction). Dashes now use one blur level for both directions, and text on roofs seen nearly edge-on fades out.
+Also: roofs showed light and dark patches that moved with the viewing angle. A roof's fill (dark "code room" when big on screen, hue-tinted when small) was decided from its size on screen measured per pixel, which varies across one roof under perspective and jumps between its two triangles. The size is now measured once per box (in the vertex shader, from the whole box, so pieces cut by tiles match). Text on roofs seen nearly edge-on fades out.
 
 Next, to decide together: the "colored roofs" look from the early screenshot.
 

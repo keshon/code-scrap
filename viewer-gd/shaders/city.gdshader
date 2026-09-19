@@ -38,7 +38,7 @@ global uniform vec4 scrap_hov_tint;
 
 varying flat vec4 v_custom;
 varying flat vec4 v_hue;
-varying flat vec4 v_dims;     // box size x, z (render units)
+varying flat vec4 v_dims;     // box size x, z (render units), shorter side on screen (px)
 varying flat float v_sel;     // 1 = this piece belongs to the selected box
 varying flat float v_hov;
 varying vec3 v_local;         // position in the piece: x, z in render units, y = height 0..1
@@ -73,7 +73,14 @@ void vertex() {
 		VERTEX = (inverse(MODEL_MATRIX) * vec4(wp, 1.0)).xyz;
 	}
 	v_local = vec3(VERTEX.x * size.x, VERTEX.z * size.z, VERTEX.y);
-	v_dims = vec4(size.x, size.z, 0.0, 0.0);
+	// the box's size on screen, once per box: measured per pixel it varies
+	// across a roof under perspective (and jumps between its triangles),
+	// which split roofs into light and dark patches
+	vec3 center = origin + size * 0.5;
+	float ppu = VIEWPORT_SIZE.y * abs(PROJECTION_MATRIX[1][1]) * 0.5 / max(distance(center, CAMERA_POSITION_WORLD), 1e-6);
+	// the whole box's shorter side (custom.w = true min / piece width), so
+	// pieces of a box cut by tiles match
+	v_dims = vec4(size.x, size.z, INSTANCE_CUSTOM.w * size.x * ppu, 0.0);
 	v_wnormal = NORMAL;   // the cube is axis aligned and not rotated
 	v_wpos = wp;
 	v_ring = NORMAL.y > 0.5 ? 2.0 : 0.0;
@@ -115,7 +122,7 @@ void fragment() {
 		int edges = int(v_custom.x + 0.5);
 		vec2 p = v_local.xy;                        // render units in the piece
 		vec2 pw = max(fwidth(p), vec2(1e-9));       // render units per pixel
-		float true_px = min(v_dims.x / pw.x, v_dims.y / pw.y);
+		float true_px = v_dims.z;
 		float show = smoothstep(scrap_line_min_box * 0.5, scrap_line_min_box, true_px);
 		float w = max(scrap_line_px, 1.0);
 		if (kind > 1.5) {
