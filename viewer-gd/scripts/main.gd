@@ -1,0 +1,461 @@
+extends Control
+## App shell: toolbar + status line, the map, and the Inspector/Search panel.
+##
+## Command-line (after `--`):
+##   --repo=<path>     folder to index when this viewer starts the server
+##   --scrap=<exe>     scrap executable (default ../scrap/bin/scrap.exe)
+##   --url=<ws url>    server address (default ws://127.0.0.1:7878/ws)
+##   --shot=<png>      save a screenshot after --wait seconds, then quit
+##   --wait=<sec>      (default 4)
+##   --search=<q>      run a search once connected and step to the first hit
+##   --focus=<substr>  fly to the first search hit's file instead of the line
+
+var client: ScrapClient
+var map: MapView
+
+var _status: Label
+var _progress: Label
+var _dot: ColorRect
+var _inspector: RichTextLabel
+var _tabs: TabContainer
+var _search_edit: LineEdit
+var _search_info: Label
+var _results: Tree
+var _more_btn: Button
+var _open_dialog: FileDialog
+
+var _hello := {}
+var _search_q := ""
+var _search_page := 0
+var _search_hits := []          # hit dictionaries in display order
+var _search_item_of := {}       # hit index -> TreeItem
+var _hit_index := -1
+var _search_req := -1
+var _node_req := -1
+var _search_timer: Timer
+
+var _args := {}
+
+
+func _ready() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--") and a.contains("="):
+			_args[a.substr(2, a.find("=") - 2)] = a.substr(a.find("=") + 1)
+
+	client = ScrapClient.new()
+	add_child(client)
+	_build_ui()
+	map.attach(client)
+	client.hello.connect(_on_hello)
+	client.progress.connect(_on_progress)
+	client.reply.connect(_on_reply)
+	client.connection_changed.connect(_on_connection)
+	map.hovered.connect(_on_hover)
+	map.selected.connect(_on_selected)
+
+	_search_timer = Timer.new()
+	_search_timer.one_shot = true
+	_search_timer.wait_time = 0.06
+	_search_timer.timeout.connect(_run_search)
+	add_child(_search_timer)
+
+	if _args.has("shot"):
+		_automate()
+
+
+func _build_ui() -> void:
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_theme_constant_override("separation", 0)
+	add_child(root)
+
+	# toolbar
+	var bar := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.1, 0.105, 0.12)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 5
+	sb.content_margin_bottom = 5
+	bar.add_theme_stylebox_override("panel", sb)
+	root.add_child(bar)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 8)
+	bar.add_child(hb)
+	var title := Label.new()
+	title.text = "code-scrap"
+	title.add_theme_font_size_override("font_size", 15)
+	hb.add_child(title)
+	hb.add_child(VSeparator.new())
+	hb.add_child(_tool_button("⌂", "Home — fit the whole repo (Home)", func(): map.home()))
+	hb.add_child(_tool_button("📂", "Open folder…", _open_folder))
+	hb.add_child(VSeparator.new())
+	var v2d := _tool_button("2D", "Flat map", func(): pass)
+	v2d.toggle_mode = true
+	v2d.button_pressed = true
+	hb.add_child(v2d)
+	var v3d := _tool_button("3D", "3D city (coming next)", func(): pass)
+	v3d.disabled = true
+	hb.add_child(v3d)
+	hb.add_child(VSeparator.new())
+	_status = Label.new()
+	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_status.clip_text = true
+	_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_status.modulate = Color(0.78, 0.8, 0.85)
+	hb.add_child(_status)
+	_progress = Label.new()
+	_progress.modulate = Color(0.65, 0.68, 0.74)
+	hb.add_child(_progress)
+	_dot = ColorRect.new()
+	_dot.custom_minimum_size = Vector2(10, 10)
+	_dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_dot.color = Color(0.85, 0.25, 0.25)
+	_dot.tooltip_text = "server: disconnected"
+	hb.add_child(_dot)
+
+	# body
+	var split := HSplitContainer.new()
+	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(split)
+	map = MapView.new()
+	map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.add_child(map)
+
+	_tabs = TabContainer.new()
+	_tabs.custom_minimum_size = Vector2(360, 0)
+	split.add_child(_tabs)
+
+	_inspector = RichTextLabel.new()
+	_inspector.name = "Inspector"
+	_inspector.bbcode_enabled = true
+	_inspector.selection_enabled = true
+	_inspector.add_theme_font_size_override("normal_font_size", 13)
+	_inspector.add_theme_font_size_override("bold_font_size", 14)
+	_inspector.text = "[color=#8a93a3]Click a box on the map to inspect it.[/color]"
+	_tabs.add_child(_inspector)
+
+	var sv := VBoxContainer.new()
+	sv.name = "Search"
+	_tabs.add_child(sv)
+	_search_edit = LineEdit.new()
+	_search_edit.placeholder_text = "Symbol prefix…"
+	_search_edit.tooltip_text = "Search symbol names · type a prefix; Enter steps through the hits · /"
+	_search_edit.clear_button_enabled = true
+	_search_edit.text_changed.connect(func(_t): _search_timer.start())
+	_search_edit.gui_input.connect(_on_search_key)
+	sv.add_child(_search_edit)
+	_search_info = Label.new()
+	_search_info.text = "Type in the filter to list its hits"
+	_search_info.modulate = Color(0.62, 0.65, 0.72)
+	_search_info.add_theme_font_size_override("font_size", 12)
+	sv.add_child(_search_info)
+	_results = Tree.new()
+	_results.hide_root = true
+	_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_results.add_theme_font_size_override("font_size", 12)
+	_results.item_selected.connect(_on_result_selected)
+	sv.add_child(_results)
+	_more_btn = Button.new()
+	_more_btn.text = "More results"
+	_more_btn.visible = false
+	_more_btn.pressed.connect(func():
+		_search_page += 1
+		_request_search(false))
+	sv.add_child(_more_btn)
+
+	_open_dialog = FileDialog.new()
+	_open_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_open_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_open_dialog.use_native_dialog = true
+	_open_dialog.dir_selected.connect(func(d): client.request("open", {"path": d}))
+	add_child(_open_dialog)
+
+
+func _tool_button(text: String, tip: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.tooltip_text = tip
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.pressed.connect(cb)
+	return b
+
+
+func _open_folder() -> void:
+	_open_dialog.popup_centered_ratio(0.6)
+
+
+# ---------------------------------------------------------------- events
+
+func _unhandled_key_input(ev: InputEvent) -> void:
+	var k := ev as InputEventKey
+	if k == null or not k.pressed or k.echo:
+		return
+	match k.keycode:
+		KEY_SLASH:
+			_tabs.current_tab = 1
+			_search_edit.grab_focus()
+			_search_edit.select_all()
+		KEY_HOME:
+			map.home()
+		KEY_F:
+			if map.selection_rect.size() == 4:
+				var t := map.fit_rect(map.selection_rect)
+				map.fly_to(t[0], t[1], t[2])
+		KEY_BACKSPACE:
+			if map.selection_id >= 0:
+				_node_req = client.request("node", {"node": map.selection_id})
+				_go_parent = true
+		KEY_ESCAPE:
+			_clear_search()
+		_:
+			return
+	get_viewport().set_input_as_handled()
+
+
+var _go_parent := false
+
+
+func _on_connection(ok: bool) -> void:
+	_dot.color = Color(0.3, 0.8, 0.45) if ok else Color(0.85, 0.25, 0.25)
+	_dot.tooltip_text = "server: " + ("connected" if ok else "disconnected — starting scrap serve…")
+	if not ok:
+		_progress.text = "connecting…"
+
+
+func _on_hello(info: Dictionary) -> void:
+	_hello = info
+	var s: Dictionary = info.stats
+	var pass_name := "precise" if info.precise else "fast"
+	_progress.text = "%s · %s files · %s lines · %s pass" % [info.name, _num(s.Files), _num(s.Lines), pass_name]
+	get_window().title = "code-scrap — " + String(info.root)
+	if _search_q != "":
+		_request_search(true)  # results may have changed with the precise pass
+
+
+func _on_progress(p: Dictionary) -> void:
+	if int(p.total) > 0 and int(p.done) < int(p.total):
+		_progress.text = "%s %s %d%%" % [p.pass, p.phase, int(100.0 * p.done / p.total)]
+
+
+func _on_hover(h: Dictionary) -> void:
+	if int(h.get("node", -1)) < 0:
+		_status.text = ""
+		return
+	var path: String = h.get("path", "")
+	var dir := path.get_base_dir()
+	var line := int(h.get("line", -1))
+	var s := "%s (%s/)" % [h.name, dir] if dir != "" else String(h.name)
+	if line >= 0:
+		s += "  ·  line %d" % (line + 1)
+	_status.text = s
+
+
+func _on_selected(id: int) -> void:
+	_node_req = client.request("node", {"node": id})
+
+
+func _on_reply(id: int, data: Dictionary) -> void:
+	match data.get("op"):
+		"node":
+			if id == _node_req:
+				if _go_parent:
+					_go_parent = false
+					var parent := int(data.get("parent", -1))
+					if parent >= 0:
+						_node_req = client.request("node", {"node": parent})
+						_fly_after_node = true
+					return
+				_show_node(data)
+				if _fly_after_node:
+					_fly_after_node = false
+					map.select_node(int(data.node), data.rect)
+					var t := map.fit_rect(data.rect)
+					map.fly_to(t[0], t[1], t[2])
+		"search":
+			if id == _search_req:
+				_show_search(data)
+
+
+var _fly_after_node := false
+
+
+func _show_node(n: Dictionary) -> void:
+	var t := "[b]%s[/b] [color=#8a93a3]· %s[/color]\n" % [_esc(n.name), n.kind]
+	t += "[color=#aab2c0]%s[/color]\n" % _esc(n.path)
+	if n.kind != "dir":
+		t += "line %d\n" % int(n.line)
+	t += "%s source lines · %s bytes\n" % [_num(n.lines), _num(n.bytes)]
+	t += "%s children · %s descendants\n" % [_num(n.children), _num(n.descendants)]
+	if n.has("lang"):
+		t += "\n[color=#8a93a3]language[/color]  %s%s\n" % [n.lang, "" if not n.get("precise", false) else "  (tree-sitter)"]
+	if n.has("classes") and n.classes != null and n.classes.size() > 0:
+		t += "[color=#8a93a3]class[/color]  %s\n" % ", ".join(n.classes)
+	if n.has("scope"):
+		t += "[color=#8a93a3]scope[/color]  %s\n" % n.scope
+	t += "\n"
+	if n.has("metrics"):
+		var m: Dictionary = n.metrics
+		t += "[b]Function metrics[/b]\n"
+		t += "cyclomatic complexity  %d\nparameters  %d\nmax nesting  %d\nlength  %d lines\n" % [int(m.complexity), int(m.params), int(m.nesting), int(m.lines)]
+	else:
+		t += "[color=#8a93a3]No function metrics for this selection.[/color]\n"
+	_inspector.text = t
+	_tabs.current_tab = 0 if _search_q == "" else _tabs.current_tab
+
+
+# ---------------------------------------------------------------- search
+
+func _run_search() -> void:
+	_search_q = _search_edit.text.strip_edges()
+	_search_page = 0
+	if _search_q == "":
+		_clear_search()
+		return
+	_request_search(true)
+
+
+func _request_search(reset: bool) -> void:
+	if reset:
+		_search_page = 0
+	_search_req = client.request("search", {"q": _search_q, "page": _search_page, "size": 64})
+
+
+func _clear_search() -> void:
+	_search_q = ""
+	_search_hits = []
+	_hit_index = -1
+	_results.clear()
+	_more_btn.visible = false
+	_search_info.text = "Type in the filter to list its hits"
+	map.clear_search()
+
+
+func _show_search(r: Dictionary) -> void:
+	if r.q != _search_q:
+		return
+	if int(r.page) == 0:
+		_results.clear()
+		_search_hits = []
+		_search_item_of = {}
+		_hit_index = -1
+	var root := _results.get_root()
+	if root == null:
+		root = _results.create_item()
+	var file_item: TreeItem = null
+	var last_path := ""
+	# continue the last file group across pages
+	if root.get_child_count() > 0:
+		file_item = root.get_child(root.get_child_count() - 1)
+		last_path = file_item.get_metadata(0)
+	for h in r.hits:
+		if h.path != last_path:
+			file_item = _results.create_item(root)
+			file_item.set_text(0, _short_path(h.path))
+			file_item.set_tooltip_text(0, h.path)
+			file_item.set_metadata(0, h.path)
+			file_item.set_custom_color(0, Color(0.72, 0.76, 0.84))
+			file_item.set_selectable(0, false)
+			last_path = h.path
+		var it := _results.create_item(file_item)
+		it.set_text(0, "%5d   %s" % [int(h.line), h.name])
+		it.set_tooltip_text(0, "%s · %s:%d" % [h.kind, h.path, int(h.line)])
+		it.set_metadata(0, _search_hits.size())
+		_search_item_of[_search_hits.size()] = it
+		_search_hits.append(h)
+	var shown := _search_hits.size()
+	_search_info.text = "%s · %d%s hits · %d files · %.1f ms" % [_search_q, int(r.total), "+" if r.more else "", r.files.size(), r.ms]
+	_more_btn.visible = shown < int(r.total)
+	var lines := []
+	for h in _search_hits:
+		lines.append(h.rect)
+	map.set_search_results(r.files, lines)
+	_status.text = "search: %d rows%s in %.1f ms" % [int(r.total), " (more)" if r.more else "", r.ms]
+	if _args.has("search") and _hit_index < 0 and shown > 0:
+		_step_hit(1)
+
+
+func _on_search_key(ev: InputEvent) -> void:
+	var k := ev as InputEventKey
+	if k == null or not k.pressed:
+		return
+	if k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER:
+		_step_hit(-1 if k.shift_pressed else 1)
+		_search_edit.accept_event()
+	elif k.keycode == KEY_ESCAPE:
+		_search_edit.text = ""
+		_clear_search()
+		map.grab_focus()
+		_search_edit.accept_event()
+
+
+func _step_hit(d: int) -> void:
+	if _search_hits.is_empty():
+		return
+	_hit_index = posmod(_hit_index + d, _search_hits.size())
+	var it: TreeItem = _search_item_of.get(_hit_index)
+	if it != null:
+		_results.set_selected(it, 0)
+		_results.scroll_to_item(it)
+	else:
+		_go_to_hit(_hit_index)
+
+
+func _on_result_selected() -> void:
+	var it := _results.get_selected()
+	if it == null or it.get_metadata(0) is String:
+		return
+	_hit_index = int(it.get_metadata(0))
+	_go_to_hit(_hit_index)
+
+
+func _go_to_hit(i: int) -> void:
+	var h: Dictionary = _search_hits[i]
+	map.current_hit = h.rect
+	map.select_node(int(h.node), h.rect)
+	if _args.has("focus"):
+		_node_req = client.request("node", {"node": int(h.fileNode)})
+		_fly_after_node = true
+	else:
+		map.focus_line(h.rect, 16.0)
+
+
+# ---------------------------------------------------------------- helpers
+
+func _short_path(p: String) -> String:
+	return p if p.length() <= 52 else "…" + p.right(51)
+
+
+func _esc(s) -> String:
+	return String(s).replace("[", "[lb]")
+
+
+func _num(v) -> String:
+	var s := str(int(v))
+	var out := ""
+	var n := s.length()
+	for i in n:
+		out += s[i]
+		var left := n - 1 - i
+		if left > 0 and left % 3 == 0:
+			out += " "
+	return out
+
+
+# ---------------------------------------------------------------- automation
+
+func _automate() -> void:
+	var wait := float(_args.get("wait", "4"))
+	if _args.has("search"):
+		client.hello.connect(func(_i):
+			if _search_q == "":
+				_tabs.current_tab = 1
+				_search_edit.text = _args.search
+				_run_search(), CONNECT_ONE_SHOT)
+	await get_tree().create_timer(wait).timeout
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	img.save_png(_args.shot)
+	print("saved ", _args.shot)
+	get_tree().quit()

@@ -1,6 +1,6 @@
 scrap/bin/
 *.exe
+*.prof
 .godot/
-*.import
 .scrap/
 viewer-gd/export/

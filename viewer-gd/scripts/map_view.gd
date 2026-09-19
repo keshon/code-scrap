@@ -1,0 +1,576 @@
+class_name MapView
+extends Control
+## The zoomable map: streams tiles from scrap, draws them, handles the camera,
+## labels, hover/selection/search overlays.
+##
+## World space is the unit square (the repo occupies its top part). The camera
+## is kept in float64 (GDScript floats) as a center + zoom (pixels per world
+## unit); only screen-space values ever reach float32 nodes, so deep zoom
+## stays precise.
+
+signal hovered(info: Dictionary)
+signal selected(node_id: int)
+signal camera_changed
+
+const TILE_PX := 256.0
+const MAX_CACHED := 700
+const LABEL_FONT_SIZE := 12
+const HIT_COLOR := Color(0.86, 0.9, 0.25)
+
+var client: ScrapClient
+
+# camera (world units, float64)
+var cx := 0.5
+var cy := 0.3
+var zoom := 1500.0
+var _zoom_target := 1500.0
+var _anchor := Vector2.ZERO        # screen point kept fixed while zooming
+var _anchor_w := [0.0, 0.0]        # world point under the anchor
+
+# map
+var gen := -1
+var world := [0.0, 0.0, 1.0, 0.625]
+var max_z := 24
+
+# tiles
+var _tiles := {}                   # Vector3i -> TileRec
+var _tiles_root: Node2D
+var _overlay: Control
+var _quad: ArrayMesh
+var _box_mat: ShaderMaterial
+var _code_mat: CanvasItemMaterial
+var _level := 0
+var _dirty := true
+var _last_request := ""
+var _frame := 0
+
+# interaction
+var _dragging := false
+var _press_pos := Vector2.ZERO
+var _pressed := false
+var _pick_pending := false
+var _pick_at := 0.0
+var _last_mouse := Vector2.ZERO
+var hover := {}                    # last pick reply
+var selection_rect := []           # world [x,y,w,h]
+var selection_id := -1
+
+# search overlays
+var hit_files := []                # Array of world rects [x,y,w,h]
+var hit_lines := []                # Array of world rects
+var current_hit := []              # world rect of the focused hit
+
+# fly-to animation
+var _fly := {}
+
+var _label_font: Font
+
+
+class TileRec:
+	var key: Vector3i
+	var node: Node2D
+	var gen: int
+	var used: int
+	var label_ids: PackedInt32Array
+	var label_kinds: PackedByteArray
+	var label_rects: PackedFloat64Array  # world x,y,w,h per label
+	var label_texts: PackedStringArray
+
+
+func _ready() -> void:
+	clip_contents = true
+	focus_mode = Control.FOCUS_CLICK
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	_label_font = load("res://fonts/Go-Medium.ttf")
+
+	_tiles_root = Node2D.new()
+	add_child(_tiles_root)
+	_overlay = Control.new()
+	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_overlay.draw.connect(_draw_overlay)
+	_overlay.z_index = 1000  # above tile nodes, whose z_index is their level
+	add_child(_overlay)
+
+	_quad = ArrayMesh.new()
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 0), Vector2(1, 1), Vector2(0, 1)])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 0), Vector2(1, 1), Vector2(0, 1)])
+	_quad.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+	_box_mat = ShaderMaterial.new()
+	_box_mat.shader = load("res://shaders/box.gdshader")
+	_code_mat = CanvasItemMaterial.new()
+	_code_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
+
+	resized.connect(func(): _dirty = true)
+
+
+func attach(c: ScrapClient) -> void:
+	client = c
+	client.hello.connect(_on_hello)
+	client.tile_received.connect(_on_tile)
+	client.reply.connect(_on_reply)
+
+
+# ---------------------------------------------------------------- camera
+
+func world_to_screen(wx: float, wy: float) -> Vector2:
+	return Vector2((wx - cx) * zoom + size.x * 0.5, (wy - cy) * zoom + size.y * 0.5)
+
+
+func screen_to_world(p: Vector2) -> Array:
+	return [cx + (p.x - size.x * 0.5) / zoom, cy + (p.y - size.y * 0.5) / zoom]
+
+
+func rect_to_screen(r: Array) -> Rect2:
+	var p := world_to_screen(r[0], r[1])
+	return Rect2(p, Vector2(r[2] * zoom, r[3] * zoom))
+
+
+func min_zoom() -> float:
+	return min(size.x / (world[2] * 1.15), size.y / (world[3] * 1.15)) * 0.5
+
+
+func max_zoom() -> float:
+	return TILE_PX * pow(2.0, max_z + 0.5)
+
+
+func fit_rect(r: Array, margin := 1.12) -> Array:
+	var z: float = min(size.x / (r[2] * margin), size.y / (r[3] * margin))
+	return [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5, clamp(z, min_zoom(), max_zoom())]
+
+
+func home(animate := true) -> void:
+	var t := fit_rect(world, 1.06)
+	if animate:
+		fly_to(t[0], t[1], t[2])
+	else:
+		_fly = {}
+		cx = t[0]
+		cy = t[1]
+		zoom = t[2]
+		_zoom_target = zoom
+		_dirty = true
+
+
+## Smooth zoom-out/pan/zoom-in (van Wijk & Nuij, "Smooth and efficient
+## zooming and panning", 2003). w = visible world width.
+func fly_to(tx: float, ty: float, tzoom: float) -> void:
+	var w0 := size.x / zoom
+	var w1 := size.x / tzoom
+	var dx := tx - cx
+	var dy := ty - cy
+	var u1 := sqrt(dx * dx + dy * dy)
+	var rho := 1.42
+	var f := {"x0": cx, "y0": cy, "dx": dx, "dy": dy, "u1": u1, "w0": w0, "w1": w1, "rho": rho, "t": 0.0}
+	if u1 < 1e-12 * w0:
+		f.S = abs(log(w1 / w0)) / rho
+		f.k = sign(log(w1 / w0))
+	else:
+		var b0 := (w1 * w1 - w0 * w0 + rho * rho * rho * rho * u1 * u1) / (2.0 * w0 * rho * rho * u1)
+		var b1 := (w1 * w1 - w0 * w0 - rho * rho * rho * rho * u1 * u1) / (2.0 * w1 * rho * rho * u1)
+		f.r0 = log(-b0 + sqrt(b0 * b0 + 1.0))
+		var r1 := log(-b1 + sqrt(b1 * b1 + 1.0))
+		f.S = (r1 - f.r0) / rho
+	f.dur = clamp(f.S * 0.32, 0.35, 1.6)
+	_fly = f
+	_zoom_target = tzoom
+
+
+func _step_fly(dt: float) -> void:
+	var f := _fly
+	f.t = min(1.0, f.t + dt / f.dur)
+	var e: float = f.t * f.t * (3.0 - 2.0 * f.t)
+	var s: float = f.S * e
+	var w: float
+	var u: float
+	if f.has("k"):
+		w = f.w0 * exp(f.k * f.rho * s)
+		u = 0.0
+	else:
+		var rho: float = f.rho
+		var r0: float = f.r0
+		w = f.w0 * cosh(r0) / cosh(rho * s + r0)
+		u = f.w0 / (rho * rho) * (cosh(r0) * tanh(rho * s + r0) - sinh(r0))
+	var k: float = 0.0 if f.u1 == 0.0 else u / f.u1
+	cx = f.x0 + f.dx * k
+	cy = f.y0 + f.dy * k
+	zoom = size.x / w
+	if f.t >= 1.0:
+		cx = f.x0 + f.dx
+		cy = f.y0 + f.dy
+		zoom = size.x / f.w1
+		_zoom_target = zoom
+		_fly = {}
+	_dirty = true
+
+
+func _process(dt: float) -> void:
+	_frame += 1
+	if not _fly.is_empty():
+		_step_fly(dt)
+	elif abs(log(_zoom_target / zoom)) > 1e-4:
+		zoom = exp(lerp(log(zoom), log(_zoom_target), 1.0 - exp(-dt * 18.0)))
+		cx = _anchor_w[0] - (_anchor.x - size.x * 0.5) / zoom
+		cy = _anchor_w[1] - (_anchor.y - size.y * 0.5) / zoom
+		_dirty = true
+	if _pick_pending and Time.get_ticks_msec() / 1000.0 >= _pick_at:
+		_pick_pending = false
+		_send_pick()
+	if _dirty and gen >= 0:
+		_dirty = false
+		_update_tiles()
+		_overlay.queue_redraw()
+		camera_changed.emit()
+
+
+# ---------------------------------------------------------------- tiles
+
+func _on_hello(info: Dictionary) -> void:
+	var first := gen < 0
+	gen = int(info.gen)
+	world = info.world
+	max_z = int(info.maxZ)
+	if first:
+		home(false)
+	_last_request = ""
+	_dirty = true
+
+
+func _level_for_zoom() -> int:
+	# +0.9: tiles are shown at 0.54–1.07× their native size, so code text is
+	# almost never magnified
+	return clampi(int(floor(log(zoom / TILE_PX) / log(2.0) + 0.9)), 0, max_z)
+
+
+func _update_tiles() -> void:
+	_level = _level_for_zoom()
+	var z := _level
+	var n := 1 << z
+	var ts := 1.0 / n
+	var tl := screen_to_world(Vector2.ZERO)
+	var br := screen_to_world(size)
+	var x0 := clampi(int(floor(max(tl[0], world[0]) / ts)), 0, n - 1)
+	var x1 := clampi(int(floor(min(br[0], world[0] + world[2]) / ts)), 0, n - 1)
+	var y0 := clampi(int(floor(max(tl[1], world[1]) / ts)), 0, n - 1)
+	var y1 := clampi(int(floor(min(br[1], world[1] + world[3]) / ts)), 0, n - 1)
+
+	var shown := {}
+	var missing := []
+	var ccx := cx / ts
+	var ccy := cy / ts
+	for ty in range(y0, y1 + 1):
+		for tx in range(x0, x1 + 1):
+			var key := Vector3i(z, tx, ty)
+			var rec: TileRec = _tiles.get(key)
+			if rec != null and rec.gen == gen:
+				shown[key] = rec
+				continue
+			missing.append([Vector2(tx + 0.5 - ccx, ty + 0.5 - ccy).length_squared(), key])
+			if rec != null:
+				shown[key] = rec  # stale generation: keep until the fresh one lands
+			else:
+				# show the nearest loaded ancestor meanwhile
+				for up in range(1, 6):
+					if z - up < 0:
+						break
+					var ak := Vector3i(z - up, tx >> up, ty >> up)
+					if _tiles.has(ak):
+						shown[ak] = _tiles[ak]
+						break
+	missing.sort_custom(func(a, b): return a[0] < b[0])
+	var keys := []
+	for m in missing:
+		keys.append([m[1].x, m[1].y, m[1].z])
+	var sig := str(gen) + ":" + str(keys)
+	if sig != _last_request and client != null:
+		_last_request = sig
+		client.request_tiles(gen, keys)
+
+	for key: Vector3i in _tiles:
+		var rec: TileRec = _tiles[key]
+		var vis := shown.has(key)
+		rec.node.visible = vis
+		if vis:
+			rec.used = _frame
+			var tsz := 1.0 / (1 << key.x)
+			rec.node.position = world_to_screen(key.y * tsz, key.z * tsz)
+			var s := tsz * zoom
+			rec.node.scale = Vector2(s, s)
+	if _tiles.size() > MAX_CACHED:
+		_evict()
+
+
+func _evict() -> void:
+	var recs := _tiles.values()
+	recs.sort_custom(func(a, b): return a.used < b.used)
+	var drop := _tiles.size() - int(MAX_CACHED * 0.8)
+	for i in drop:
+		var rec: TileRec = recs[i]
+		if rec.node.visible:
+			continue
+		rec.node.queue_free()
+		_tiles.erase(rec.key)
+
+
+func _on_tile(t: Dictionary) -> void:
+	if int(t.gen) != gen:
+		return
+	var key := Vector3i(t.z, t.x, t.y)
+	var old: TileRec = _tiles.get(key)
+	if old != null:
+		old.node.queue_free()
+	var rec := TileRec.new()
+	rec.key = key
+	rec.gen = gen
+	rec.used = _frame
+	var node := Node2D.new()
+	node.z_index = t.z
+	var ids: PackedInt32Array = t.ids
+	if ids.size() > 0:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_2D
+		mm.use_colors = true
+		mm.use_custom_data = true
+		mm.mesh = _quad
+		mm.instance_count = ids.size()
+		mm.buffer = t.buffer
+		var mmi := MultiMeshInstance2D.new()
+		mmi.multimesh = mm
+		mmi.material = _box_mat
+		node.add_child(mmi)
+	if t.has("code"):
+		var img: Image = t.code
+		img.generate_mipmaps()
+		var sp := Sprite2D.new()
+		sp.texture = ImageTexture.create_from_image(img)
+		sp.centered = false
+		sp.scale = Vector2.ONE / TILE_PX
+		sp.material = _code_mat
+		sp.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		node.add_child(sp)
+	# labels → world space
+	var ts := 1.0 / (1 << int(t.z))
+	var ox: float = t.x * ts
+	var oy: float = t.y * ts
+	for l in t.labels:
+		var r: Rect2 = l.rect
+		rec.label_ids.append(l.id)
+		rec.label_kinds.append(l.kind)
+		rec.label_rects.append_array([ox + r.position.x * ts, oy + r.position.y * ts, r.size.x * ts, r.size.y * ts])
+		rec.label_texts.append(l.text)
+	rec.node = node
+	node.visible = false
+	_tiles_root.add_child(node)
+	_tiles[key] = rec
+	_dirty = true
+
+
+# ---------------------------------------------------------------- input
+
+func _gui_input(ev: InputEvent) -> void:
+	if ev is InputEventMouseButton:
+		var mb := ev as InputEventMouseButton
+		if mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			var f := 1.25 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.25
+			if mb.factor > 0.0:
+				f = pow(f, mb.factor)
+			_fly = {}
+			_anchor = mb.position
+			_anchor_w = screen_to_world(mb.position)
+			_zoom_target = clamp(_zoom_target * f, min_zoom(), max_zoom())
+			accept_event()
+		elif mb.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT]:
+			if mb.pressed:
+				grab_focus()
+				_pressed = true
+				_dragging = false
+				_press_pos = mb.position
+				if mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT:
+					_focus_hovered()
+			else:
+				if _pressed and not _dragging and mb.button_index == MOUSE_BUTTON_LEFT:
+					_select_hovered()
+				_pressed = false
+				_dragging = false
+	elif ev is InputEventMouseMotion:
+		var mm := ev as InputEventMouseMotion
+		_last_mouse = mm.position
+		if _pressed:
+			if not _dragging and mm.position.distance_to(_press_pos) > 4.0:
+				_dragging = true
+			if _dragging:
+				_fly = {}
+				cx -= mm.relative.x / zoom
+				cy -= mm.relative.y / zoom
+				_anchor_w = screen_to_world(_anchor)
+				_dirty = true
+		_schedule_pick()
+	elif ev is InputEventMagnifyGesture:
+		_anchor = ev.position
+		_anchor_w = screen_to_world(ev.position)
+		_zoom_target = clamp(_zoom_target * ev.factor, min_zoom(), max_zoom())
+	elif ev is InputEventPanGesture:
+		cx += ev.delta.x * 20.0 / zoom
+		cy += ev.delta.y * 20.0 / zoom
+		_dirty = true
+
+
+func _schedule_pick() -> void:
+	if not _pick_pending:
+		_pick_pending = true
+		_pick_at = Time.get_ticks_msec() / 1000.0 + 0.03
+
+
+func _send_pick() -> void:
+	if client == null or gen < 0:
+		return
+	var w := screen_to_world(_last_mouse)
+	client.request("pick", {"x": w[0], "y": w[1], "scale": zoom})
+
+
+func _on_reply(_id: int, data: Dictionary) -> void:
+	if data.get("op") == "pick":
+		hover = data
+		hovered.emit(data)
+		_overlay.queue_redraw()
+
+
+func _select_hovered() -> void:
+	if hover.is_empty() or int(hover.get("node", -1)) < 0:
+		return
+	select_node(int(hover.node), hover.rect)
+
+
+func select_node(id: int, rect: Array) -> void:
+	selection_id = id
+	selection_rect = rect
+	selected.emit(id)
+	_overlay.queue_redraw()
+
+
+func _focus_hovered() -> void:
+	if hover.is_empty() or int(hover.get("node", -1)) < 0:
+		return
+	var t := fit_rect(hover.rect)
+	fly_to(t[0], t[1], t[2])
+
+
+## Flies so the world rect r (e.g. a text line) is centered with its height
+## shown at about `line_px` pixels.
+func focus_line(r: Array, line_px := 16.0) -> void:
+	var z: float = clamp(line_px / max(r[3], 1e-12), min_zoom(), max_zoom())
+	fly_to(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5, z)
+
+
+# ---------------------------------------------------------------- overlay
+
+func _draw_overlay() -> void:
+	var o := _overlay
+	var view := Rect2(Vector2.ZERO, size)
+	# search: files with hits, then hit lines
+	for r in hit_files:
+		var s := rect_to_screen(r)
+		if not view.intersects(s.grow(2)):
+			continue
+		if s.size.x < 6.0 or s.size.y < 6.0:
+			var c := s.get_center()
+			o.draw_rect(Rect2(c - Vector2(1.5, 1.5), Vector2(3, 3)).merge(s), HIT_COLOR)
+		else:
+			# strong when small, just an outline once the file fills the view
+			var fade: float = 1.0 - smoothstep(60.0, 400.0, min(s.size.x, s.size.y))
+			o.draw_rect(s, Color(HIT_COLOR, 0.05 + 0.2 * fade))
+			o.draw_rect(s, Color(HIT_COLOR, 0.5 + 0.3 * fade), false, 1.0)
+	for r in hit_lines:
+		var s := rect_to_screen(r)
+		if view.intersects(s) and s.size.y >= 1.0:
+			o.draw_rect(s, Color(HIT_COLOR, 0.22))
+	if current_hit.size() == 4:
+		var s := rect_to_screen(current_hit)
+		o.draw_rect(s.grow(1), Color(HIT_COLOR, 0.35))
+		o.draw_rect(s.grow(1), HIT_COLOR, false, 1.5)
+	# labels
+	_draw_labels()
+	# hover + selection
+	if hover.has("rect") and int(hover.get("node", -1)) >= 0:
+		o.draw_rect(rect_to_screen(hover.rect), Color(0.55, 0.75, 1.0, 0.7), false, 1.0)
+		if hover.has("lineRect"):
+			o.draw_rect(rect_to_screen(hover.lineRect), Color(0.55, 0.75, 1.0, 0.12))
+	if selection_rect.size() == 4:
+		o.draw_rect(rect_to_screen(selection_rect), Color(0.3, 0.55, 1.0), false, 2.0)
+
+
+func _draw_labels() -> void:
+	var o := _overlay
+	var seen := {}
+	var cand := []
+	var view := Rect2(Vector2.ZERO, size)
+	for key: Vector3i in _tiles:
+		var rec: TileRec = _tiles[key]
+		if not rec.node.visible:
+			continue
+		for i in rec.label_ids.size():
+			var id := rec.label_ids[i]
+			if seen.has(id):
+				continue
+			seen[id] = true
+			var r := Rect2(world_to_screen(rec.label_rects[i * 4], rec.label_rects[i * 4 + 1]),
+				Vector2(rec.label_rects[i * 4 + 2] * zoom, rec.label_rects[i * 4 + 3] * zoom))
+			var kind := rec.label_kinds[i]
+			if kind == 2:
+				if r.size.y < 7.0 or r.size.x < 30.0:
+					continue
+			elif r.size.x < 34.0:
+				continue
+			if not view.intersects(r):
+				continue
+			cand.append([r.size.x, r, rec.label_texts[i], kind])
+	cand.sort_custom(func(a, b): return a[0] > b[0])
+	var placed: Array[Rect2] = []
+	var budget := 450
+	for c in cand:
+		if budget <= 0:
+			break
+		var r: Rect2 = c[1]
+		var fs := LABEL_FONT_SIZE
+		if c[3] == 2:
+			fs = clampi(int(r.size.y * 0.85), 8, LABEL_FONT_SIZE)
+		var text: String = c[2]
+		var max_w := r.size.x - 8.0
+		var tw := _label_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		if tw > max_w:
+			var keep := int(text.length() * max_w / tw) - 1
+			if keep < 3:
+				continue
+			text = text.substr(0, keep) + "…"
+			tw = _label_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var pos := Vector2(max(r.position.x, 0.0) + 2.0, max(r.position.y, 0.0) + 1.0)
+		var pill := Rect2(pos, Vector2(tw + 6.0, fs + 4.0))
+		var hit := false
+		for p in placed:
+			if p.intersects(pill):
+				hit = true
+				break
+		if hit:
+			continue
+		placed.append(pill)
+		budget -= 1
+		o.draw_rect(pill, Color(0.07, 0.075, 0.09, 0.88))
+		o.draw_string(_label_font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.93, 0.94, 0.96))
+
+
+# ---------------------------------------------------------------- search
+
+func set_search_results(files: Array, lines: Array) -> void:
+	hit_files = files
+	hit_lines = lines
+	_overlay.queue_redraw()
+
+
+func clear_search() -> void:
+	hit_files = []
+	hit_lines = []
+	current_hit = []
+	_overlay.queue_redraw()
