@@ -1,6 +1,6 @@
 # Polish plan
 
-Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1–4 done, theme A (Calm) first
+Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1–5 done, theme A (Calm) first
 
 This plan turns the prototype into a tool: a data-driven core, a real UI shell, and a viewport that reads well. It covers the 20 review points from 2026-09-19. The phases are ordered so that each one builds on the previous: first the foundations everything else plugs into, then fixes, then the shell, then viewport polish.
 
@@ -258,6 +258,26 @@ A viewport overlay (bottom-right, collapsible) generated from what's active: col
 ---
 
 ## Phase 5 — Extras (point 19)
+
+> **Done (2026-09-19).**
+> - **Minimap** (bottom-left, ☰): shows the view rectangle in 2D and the ground footprint in 3D; click or drag it to move.
+> - **Bookmarks:** Ctrl+1..9 saves and 1..9 goes back, per repository (view, camera, selection by path).
+> - **Startup cache:**
+>   - per-file analysis is cached by path + size + mtime, and git history by HEAD + day + window, in the user cache folder;
+>   - on yougile a warm start takes 0.3 s for the fast pass (already precise) + 0.3 s for the precise pass + 49 ms for git, instead of 1.6 s + 7.5 s + 0.55 s cold.
+> - **Stable layout** (View tab): siblings are ordered by name.
+> - **Relations explorer:** `]` / `[` step through the Inspector's relation list; the list stays anchored to where you started.
+> - **File watching:** polls every 2 s and re-indexes from the cache (tens of ms); a new git HEAD re-reads history. Turn off with `scrap serve -no-watch` (and `-no-cache`).
+> - **From Phase 4:**
+>   - 2D focus + context dimming (Settings → Look);
+>   - 2D arc tooltips;
+>   - area palettes (pastel / neutral / cyan);
+>   - folder names printed on the terrace wall that faces the camera.
+> - **Also fixed:** after a wheel zoom in 3D, two height drivers kept the camera from ever resting, so the view redrew every frame. An idle city now costs 0 redraws (5 ms/frame instead of 20). The HUD shows redraws per second and what caused them.
+> - **Not planned:**
+>   - SSAO: the city is shaded in its own unshaded shader, which contact shading and bevels already cover;
+>   - hierarchical edge bundling: screen-space grouping solves the overlap in practice;
+>   - dimming in 3D.
 
 - **Minimap** (bottom-left): the whole repo with the current view rectangle. Keeps context while deep in code.
 - **Bookmarks:** Ctrl+1..9 saves a camera + selection, 1..9 recalls it.

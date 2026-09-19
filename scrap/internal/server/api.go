@@ -15,7 +15,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 5
+const Protocol = 6
 
 func hello(st *state) map[string]any {
 	m := st.m
@@ -58,7 +58,7 @@ func legend(m *codemap.Map) map[string]any {
 	areas := m.Areas()
 	list := make([]map[string]any, 0, min(len(areas), 16))
 	for _, a := range areas[:min(len(areas), 16)] {
-		list = append(list, map[string]any{"node": a.Node, "name": a.Name, "color": tile.AreaColor(a.Hue), "lines": a.Lines})
+		list = append(list, map[string]any{"node": a.Node, "name": a.Name, "color": tile.AreaColor(m, a.Hue), "lines": a.Lines})
 	}
 	return map[string]any{"kind": "area", "areas": list, "more": max(len(areas)-16, 0)}
 }
@@ -257,6 +257,34 @@ func search(st *state, q string, page, size int) map[string]any {
 	}
 }
 
+// overview is the whole map, coarse, for the minimap: directories and files
+// down to a few levels, skipping boxes too small to see at minimap size.
+// boxes: flat [x, y, w, h, r, g, b, kind] per box, parents first.
+func overview(st *state) map[string]any {
+	m := st.m
+	minArea := m.World.W * m.World.H * 2e-5
+	boxes := make([]float32, 0, 8*4096)
+	var visit func(id int32, depth int)
+	visit = func(id int32, depth int) {
+		n := &m.Nodes[id]
+		if n.Kind == codemap.KindScope || n.Rect.W*n.Rect.H < minArea || len(boxes) >= 8*6000 {
+			return
+		}
+		if id != 0 {
+			c := tile.BoxColor(m, n)
+			boxes = append(boxes, float32(n.Rect.X), float32(n.Rect.Y), float32(n.Rect.W), float32(n.Rect.H),
+				c[0], c[1], c[2], float32(n.Kind))
+		}
+		if depth < 4 {
+			for _, c := range n.Children {
+				visit(c, depth+1)
+			}
+		}
+	}
+	visit(0, 0)
+	return map[string]any{"op": "overview", "world": rect(m.World), "boxes": boxes}
+}
+
 // children lists a node's children for tree views and breadcrumb menus.
 func children(st *state, id int32) map[string]any {
 	m := st.m
@@ -265,7 +293,7 @@ func children(st *state, id int32) map[string]any {
 		n := &m.Nodes[c]
 		items = append(items, map[string]any{
 			"node": c, "name": n.Name, "kind": n.Kind.String(), "lines": n.Lines,
-			"kids": len(n.Children), "color": tile.AreaColor(n.Hue),
+			"kids": len(n.Children), "color": tile.AreaColor(m, n.Hue),
 		})
 	}
 	return map[string]any{"op": "children", "node": id, "items": items}

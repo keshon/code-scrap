@@ -14,6 +14,7 @@ const USER_FILE := "user://settings.json"
 const USER_PRESETS := "user://presets"
 const RECENT_FILE := "user://recent.json"
 const RECENT_MAX := 10
+const BOOKMARKS_FILE := "user://bookmarks.json"
 
 var config_dir := ""
 var groups: Array = []      # schema groups, in order
@@ -231,6 +232,25 @@ func add_recent(p: String) -> void:
 	var f := FileAccess.open(RECENT_FILE, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify({"paths": list.slice(0, RECENT_MAX)}, "  "))
+
+
+# ------------------------------------------------------------------ bookmarks
+
+## Saved views of a repository: "1".."9" -> {view, cam, path}.
+func bookmarks(root: String) -> Dictionary:
+	return read_json(BOOKMARKS_FILE).get(root.to_lower(), {})
+
+
+func set_bookmark(root: String, n: int, data: Dictionary) -> void:
+	if not persist:
+		return
+	var all := read_json(BOOKMARKS_FILE)
+	var mine: Dictionary = all.get(root.to_lower(), {})
+	mine[str(n)] = data
+	all[root.to_lower()] = mine
+	var f := FileAccess.open(BOOKMARKS_FILE, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(all, "  "))
 
 
 # ------------------------------------------------------------------ persistence

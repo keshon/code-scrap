@@ -1,6 +1,7 @@
 package codemap
 
 import (
+	"encoding/gob"
 	"os"
 	"path/filepath"
 	"strings"
@@ -299,5 +300,43 @@ func TestImportanceRules(t *testing.T) {
 	}
 	if _, err := ParseRules("nonsense"); err == nil {
 		t.Error("want an error for a rule without =")
+	}
+}
+
+func TestFileCache(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n\nfunc F() int {\n\treturn 1\n}\n"), 0o644)
+	c := &FileCache{path: filepath.Join(t.TempDir(), "files.gob"), entries: map[string]cacheEntry{}}
+	m1, err := Build(root, Options{NoGit: true, Precise: true, Cache: c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.entries) != 1 || c.entries["a.go"].Pass != 2 {
+		t.Fatalf("cache not filled: %+v", c.entries)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	// a fast build now gets the precise result from the cache
+	c2 := &FileCache{path: c.path}
+	f, _ := os.Open(c.path)
+	var cf cacheFile
+	if err := gob.NewDecoder(f).Decode(&cf); err != nil || cf.Version != cacheVersion {
+		t.Fatalf("saved cache unreadable: %v", err)
+	}
+	f.Close()
+	c2.entries = cf.Entries
+	m2, err := Build(root, Options{NoGit: true, Cache: c2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m2.Files[0].Precise || len(m2.Files[0].Scopes) != len(m1.Files[0].Scopes) {
+		t.Error("fast build should reuse the cached precise scopes")
+	}
+	// a changed file is parsed again
+	os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n\nfunc F() int {\n\treturn 1\n}\n\nfunc G() int {\n\treturn 2\n}\n"), 0o644)
+	m3, _ := Build(root, Options{NoGit: true, Precise: true, Cache: c2})
+	if len(m3.Files[0].Scopes) != 2 {
+		t.Errorf("changed file should be re-parsed: %d scopes", len(m3.Files[0].Scopes))
 	}
 }

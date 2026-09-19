@@ -37,6 +37,8 @@ type Server struct {
 	Options  codemap.Options
 	Atlas    *tile.Atlas // glyph atlas for GPU text; sets the layout's char aspect
 	GitSince string      // history window for git metrics ("" = all history)
+	NoCache  bool        // do not read or write the analysis and git caches
+	NoWatch  bool        // do not re-index when files change
 
 	// What is served = base (latest index) + git metrics + view. Guarded by mu.
 	base    *codemap.Map
@@ -54,9 +56,10 @@ type Server struct {
 	indexCtx context.Context    // lives as long as the current root
 	gitStop  context.CancelFunc // cancels the running git read
 
-	userRules string         // importance rules as the viewer sent them
-	repoRules []codemap.Rule // from the open repo's .scrap.json
-	progress  atomic.Value   // last progress message (map[string]any)
+	cache     *codemap.FileCache // analysis of unchanged files, kept between runs
+	userRules string             // importance rules as the viewer sent them
+	repoRules []codemap.Rule     // from the open repo's .scrap.json
+	progress  atomic.Value       // last progress message (map[string]any)
 }
 
 // New creates a server; call Open to index a root. fontPath selects the
@@ -92,10 +95,16 @@ func (s *Server) Open(root string) error {
 	user, _ := codemap.ParseRules(s.userRules)
 	s.repoRules = codemap.RepoRules(root)
 	s.view.Rules = append(user, s.repoRules...)
+	s.cache = nil
+	if !s.NoCache {
+		s.cache = codemap.LoadFileCache(root)
+	}
+	cache := s.cache
 	s.mu.Unlock()
 
 	fast := s.Options
 	fast.Precise = false
+	fast.Cache = cache
 	fast.Progress = s.progressFn("fast")
 	m, err := codemap.Build(root, fast)
 	if err != nil {
@@ -111,6 +120,7 @@ func (s *Server) Open(root string) error {
 	go func() {
 		precise := s.Options
 		precise.Precise = true
+		precise.Cache = cache
 		precise.Progress = s.progressFn("precise")
 		pm, err := codemap.Build(root, precise)
 		if err != nil || ctx.Err() != nil {
@@ -118,6 +128,12 @@ func (s *Server) Open(root string) error {
 		}
 		s.setBase(pm, true)
 		log.Printf("precise index: %d/%d files parsed, %d scopes in %d ms", pm.Stats.PreciseFiles, pm.Stats.Files, pm.Stats.Scopes, pm.Stats.IndexMs)
+		if err := cache.Save(); err != nil {
+			log.Printf("cache: %v", err)
+		}
+		if !s.NoWatch {
+			go s.watch(ctx, root, pm)
+		}
 	}()
 	return nil
 }
@@ -162,6 +178,17 @@ func (s *Server) SetGitSince(since string) {
 	}
 }
 
+// SetLook changes the layout order and the area palette.
+func (s *Server) SetLook(stable bool, palette string) {
+	s.mu.Lock()
+	changed := stable != s.view.Stable || palette != s.view.Palette
+	s.view.Stable, s.view.Palette = stable, palette
+	s.mu.Unlock()
+	if changed {
+		s.rebuild()
+	}
+}
+
 // SetImportance changes the importance weights (by class name) and the
 // user's rules ("glob = weight; …"); the open repo's .scrap.json rules are
 // applied after them.
@@ -184,7 +211,11 @@ func (s *Server) SetImportance(w map[string]float64, rules string) error {
 func (s *Server) readGit(ctx context.Context, root, since string) {
 	t := time.Now()
 	s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 0, "total": 1})
-	stats, err := gitlog.Read(ctx, root, since)
+	dir := ""
+	if !s.NoCache {
+		dir = codemap.CacheDir(root)
+	}
+	stats, cached, err := gitlog.ReadCached(ctx, root, since, dir)
 	if err != nil || ctx.Err() != nil {
 		if err != nil {
 			log.Printf("git history unavailable: %v", err)
@@ -199,7 +230,7 @@ func (s *Server) readGit(ctx context.Context, root, since string) {
 	s.mu.Lock()
 	s.git, s.gitTime = g, time.Now().Unix()
 	s.mu.Unlock()
-	log.Printf("git history (since %q): %d paths in %d ms", since, len(g), time.Since(t).Milliseconds())
+	log.Printf("git history (since %q): %d paths in %d ms (cached: %v)", since, len(g), time.Since(t).Milliseconds(), cached)
 	s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 1, "total": 1})
 	s.rebuild()
 }
@@ -220,6 +251,7 @@ func (s *Server) SetView(v codemap.View) {
 	if v.Rules == nil {
 		v.Rules = s.view.Rules
 	}
+	v.Stable, v.Palette = s.view.Stable, s.view.Palette // settings, not lens pickers
 	s.view = v
 	s.mu.Unlock()
 	s.rebuild()

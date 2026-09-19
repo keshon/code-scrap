@@ -65,7 +65,12 @@ func _ready() -> void:
 			cp.add_separator()
 		else:
 			cp.add_item("%s\t%s" % [CAMERA[i][0], CAMERA[i][2]], i)
-	cp.id_pressed.connect(func(i): action.emit(CAMERA[i][1]))
+	cp.add_separator("Bookmarks")
+	cp.add_item("Save: Ctrl+1 … 9   ·   Go: 1 … 9", 99)
+	cp.set_item_disabled(cp.item_count - 1, true)
+	cp.id_pressed.connect(func(i):
+		if i < CAMERA.size():
+			action.emit(CAMERA[i][1]))
 	cam_island.add_child(_camera)
 
 	var disp_island := _island()

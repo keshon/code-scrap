@@ -55,6 +55,8 @@ var _reading_goal := 0.0
 var _labels_root: Node3D
 var _label_of := {}          # node id -> Label3D shown last frame
 var _label_free: Array[Label3D] = []
+var _wall_of := {}           # node id -> Label3D printed on a wall
+var _wall_free: Array[Label3D] = []
 var _text: TextLayer
 var _plane: ArrayMesh
 var _sel_xray: MeshInstance3D
@@ -89,6 +91,8 @@ var stat_shown := 0
 var stat_missing := 0
 var stat_evicted := 0
 var stat_gens := 0
+var stat_redraws := 0        # full view updates (tiles, text, labels) so far
+var why := {}                # what asked for the last redraws (diagnostics)
 var hit_files := []          # [x, y, w, h, top]
 var current_hit := {}        # {rect, top}
 
@@ -442,6 +446,24 @@ func _fly_rect(r: Array, top: float, margin := 1.25) -> void:
 		"t": 0.0, "dur": _fly_dur(0.9), "arc": true}
 
 
+## The camera, for bookmarks.
+func camera_state() -> Dictionary:
+	return {"tx": tx, "ty": ty, "th": th, "dist": _goal_get("dist"), "yaw": yaw, "pitch": pitch}
+
+
+## Flies to a saved camera.
+func fly_to_state(c: Dictionary) -> void:
+	_goal = {}
+	var to := {}
+	for k in ["tx", "ty", "th", "dist", "yaw", "pitch"]:
+		to[k] = float(c.get(k, get(k)))
+	var from := {}
+	for k in to:
+		from[k] = get(k)
+	_tween = {"from": from, "to": to, "t": 0.0, "dur": _fly_dur(1.0), "arc": true}
+	_dirty = true
+
+
 func focus_rect(r: Array, top: float) -> void:
 	_fly_rect(r, top, 1.6)
 
@@ -551,16 +573,21 @@ func _process(dt: float) -> void:
 	_frame += 1
 	_step(dt)
 	_follow_floor(dt)
-	if abs(_reading - _reading_goal) > 0.002:
+	if _reading != _reading_goal:
 		_reading = lerp(_reading, _reading_goal, 1.0 - exp(-dt * 3.0))
+		if abs(_reading - _reading_goal) < 0.01:
+			_reading = _reading_goal  # settle, so a still camera stays still
 		_dirty = true
+		why.reading = int(why.get("reading", 0)) + 1
 	if _pick_pending and Time.get_ticks_msec() / 1000.0 >= _pick_at:
 		_pick_pending = false
 		_send_pick()
 	if _text != null and _text.animating():
 		_dirty = true  # text fades in/out
+		why.text = int(why.get("text", 0)) + 1
 	if _dirty and gen >= 0:
 		_dirty = false
+		stat_redraws += 1
 		_update_camera()
 		_update_tiles()
 		_overlay.queue_redraw()
@@ -574,9 +601,12 @@ func _follow_floor(dt: float) -> void:
 		_heights_at = now
 		var cam_w := [_cam.global_position.x / S + _origin[0], _cam.global_position.z / S + _origin[1]]
 		_heights_req = client.request("heights", {"pts": [cam_w, [tx, ty]]})
-	if _tween.is_empty() and _drag.is_empty() and abs(th - _floor_target) > dist * 1e-4:
+	# only once zooming has settled: the zoom goal moves th itself, and two
+	# drivers pulling th toward different heights never come to rest
+	if _tween.is_empty() and _goal.is_empty() and _drag.is_empty() and abs(th - _floor_target) > dist * 1e-4:
 		th = lerp(th, _floor_target, 1.0 - exp(-dt * 8.0))
 		_dirty = true
+		why.floor = int(why.get("floor", 0)) + 1
 
 
 # ---------------------------------------------------------------- tiles
@@ -712,7 +742,9 @@ func _update_text(cam_pos: Vector3) -> void:
 			# how readable is the code at the orbit target?
 			if tx >= b.x and tx <= b.x + b.w and ty >= b.y and ty <= b.y + b.h:
 				reading = max(reading, smoothstep(5.0, 14.0, line_px))
-	_reading_goal = reading
+	# quantized: the assist tilts the camera, which changes line sizes, which
+	# would otherwise nudge the goal every frame and keep the view moving
+	_reading_goal = snappedf(reading, 0.1)
 	if not Settings.get_value("viewport.code_text"):
 		wanted = []
 	_text.update(wanted, int(Settings.get_value("text.budget")), func(node: Node3D, b: Dictionary):
@@ -1003,6 +1035,10 @@ func _draw_overlay() -> void:
 		_draw_labels()
 	else:
 		_place_labels_3d([])
+		for id in _wall_of.keys():
+			_wall_of[id].visible = false
+			_wall_free.append(_wall_of[id])
+		_wall_of.clear()
 
 
 func _draw_labels() -> void:
@@ -1012,6 +1048,8 @@ func _draw_labels() -> void:
 	var view := Rect2(Vector2.ZERO, size)
 	var min_box: float = Settings.get_value("labels.min_box_px")
 	var fs: int = Settings.get_value("labels.font_size")
+	var walls: bool = Settings.get_value("labels.dirs_on_walls")
+	var used := {}   # wall labels shown this frame (id -> true)
 	for key: Vector3i in _tiles:
 		var rec: Rec = _tiles[key]
 		if not rec.node.visible:
@@ -1032,10 +1070,87 @@ func _draw_labels() -> void:
 			if w < min_box or not view.has_point(s0):
 				continue
 			var kind := int(rec.label_kinds[i])
+			if kind == 0 and walls and _wall_label(id, rec, j, fs, used):
+				continue
 			cand.append({"id": id, "prio": w, "kind": kind, "color": rec.label_colors[i], "text": rec.label_texts[i],
 				"max_w": w - 8.0, "pos": s0 + Vector2(2, -fs - 6), "size": fs if kind == 0 else max(fs - 1, 8),
 				"at": p0})
 	_place_labels_3d(ViewCommon.place_labels(cand, Settings.get_value("labels.max")))
+	# wall signs not used this frame go back to the pool
+	for id in _wall_of.keys():
+		if not used.has(id):
+			_wall_of[id].visible = false
+			_wall_free.append(_wall_of[id])
+			_wall_of.erase(id)
+
+
+## Prints a folder's name on its terrace wall that faces the camera, like a
+## sign. False when that wall is too small to read (the caller falls back to
+## a floating label).
+func _wall_label(id: int, rec: Rec, j: int, fs: int, used: Dictionary) -> bool:
+	var x: float = rec.label_data[j]
+	var y: float = rec.label_data[j + 1]
+	var w: float = rec.label_data[j + 2]
+	var h: float = rec.label_data[j + 3]
+	var top: float = rec.label_data[j + 4]
+	# the wall facing the camera: the axis the camera offset points along
+	var off := Vector2(sin(yaw), cos(yaw))
+	var n: Vector3
+	var mid: Vector3
+	var span: float
+	if abs(off.x) > abs(off.y):
+		n = Vector3(sign(off.x), 0, 0)
+		mid = Vector3(x + (w if off.x > 0 else 0.0), top, y + h * 0.5)
+		span = h
+	else:
+		n = Vector3(0, 0, sign(off.y))
+		mid = Vector3(x + w * 0.5, top, y + (h if off.y > 0 else 0.0))
+		span = w
+	# text height: most of the terrace step (dirStep = 3.5% of the shorter side)
+	var text_h: float = min(w, h) * 0.035 * 0.62
+	var p := _world_to_render(mid.x, mid.y - text_h * 0.62, mid.z)
+	if _cam.is_position_behind(p):
+		return false
+	var d: float = _cam.global_position.distance_to(p) / S
+	var px := text_h * _ppu(d)
+	if px < 9.0 * _f or px > 400.0 * _f:
+		return false
+	var name := rec.label_texts[j / 5]
+	var font := Style.font("ui", 600)
+	var font_size := 64
+	var pixel := text_h * S / font_size
+	var tw := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x * pixel
+	if tw > span * S * 0.9:
+		var keep := int(name.length() * span * S * 0.9 / tw) - 1
+		if keep < 3:
+			return false
+		name = name.substr(0, keep) + "…"
+	var l: Label3D = _wall_of.get(id)
+	if l == null:
+		l = _wall_free.pop_back() if not _wall_free.is_empty() else null
+		if l == null:
+			l = Label3D.new()
+			l.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			l.double_sided = false
+			l.font_size = font_size
+			l.outline_size = 0
+			_labels_root.add_child(l)
+		_wall_of[id] = l
+	used[id] = true
+	l.visible = true
+	l.position = p + n * (0.002 * text_h * S)
+	l.rotation = Vector3(0, atan2(n.x, n.z), 0)
+	# only touch what changed: Label3D rebuilds its mesh on text/size changes
+	var look := [name, snappedf(pixel, pixel * 0.001), Style.theme_id]
+	if l.get_meta("look", []) != look:
+		l.set_meta("look", look)
+		l.font = font
+		l.text = name
+		l.pixel_size = pixel
+		l.modulate = rec.label_colors[j / 5].lerp(Color.WHITE, 0.35)
+	return true
 
 
 ## 3D labels are Label3D nodes: depth tested, so buildings in front hide

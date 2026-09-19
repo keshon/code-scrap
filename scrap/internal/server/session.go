@@ -54,6 +54,8 @@ type request struct {
 	Weights  map[string]float64 `json:"weights"`
 	Rules    *string            `json:"rules"` // importance rules: "glob = weight; …"
 	GitSince *string            `json:"gitSince"`
+	Stable   *bool              `json:"stable"`  // layout by name
+	Palette  *string            `json:"palette"` // area hue set
 	Node     int32              `json:"node"`
 	X        float64            `json:"x"`
 	Y        float64            `json:"y"`
@@ -227,6 +229,16 @@ func (ss *session) handle(req request) {
 				}
 			}()
 		}
+		if req.Stable != nil || req.Palette != nil {
+			stable, palette := false, ""
+			if req.Stable != nil {
+				stable = *req.Stable
+			}
+			if req.Palette != nil {
+				palette = *req.Palette
+			}
+			go ss.srv.SetLook(stable, palette)
+		}
 		if req.GitSince != nil {
 			ss.srv.SetGitSince(*req.GitSince)
 		}
@@ -246,6 +258,10 @@ func (ss *session) handle(req request) {
 				hs[i] = st.m.HeightAt(p[0], p[1])
 			}
 			resp = map[string]any{"op": "heights", "h": hs}
+		}
+	case "overview":
+		if st != nil {
+			resp = overview(st)
 		}
 	case "children":
 		if st != nil {

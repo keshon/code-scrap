@@ -9,6 +9,9 @@ const LIST_MAX := 25
 
 var _node := {}
 var _rel := {}
+var _anchor := ""        # the node whose relations are listed (while stepping)
+var targets: Array[int] = []   # relation endpoints in list order ([ and ] step)
+var cursor := -1
 
 
 func _ready() -> void:
@@ -35,10 +38,23 @@ func clear_node() -> void:
 	_render()
 
 
-## rel: op ("edges" | "calls") -> relations reply
-func set_relations(rel: Dictionary) -> void:
+## rel: op ("edges" | "calls") -> relations reply. anchor: the name of the
+## node they belong to when it is not the one shown (stepping through them).
+func set_relations(rel: Dictionary, anchor := "") -> void:
 	_rel = rel
+	_anchor = anchor
+	cursor = -1
 	_render()
+
+
+## Moves the relations cursor (1 next, -1 previous); returns the node to
+## go to, or -1.
+func step(d: int) -> int:
+	if targets.is_empty():
+		return -1
+	cursor = posmod(cursor + d, targets.size())
+	_render()
+	return targets[cursor]
 
 
 func _render() -> void:
@@ -76,6 +92,10 @@ func _render() -> void:
 		t += "cyclomatic complexity  %d\nparameters  %d\nmax nesting  %d\nlength  %d lines\n" % [int(m.complexity), int(m.params), int(m.nesting), int(m.lines)]
 	else:
 		t += "[color=%s]No function metrics for this selection.[/color]\n" % dim
+	targets = []
+	if not _rel.is_empty():
+		var of := (" of [b]%s[/b]" % _esc(_anchor)) if _anchor != "" else ""
+		t += "\n[color=%s]Relations%s · [lb] and ] step through them[/color]\n" % [dim, of]
 	if _rel.has("edges"):
 		t += "\n[b]Imports[/b]\n"
 		t += _list(_rel.edges, "out", "imports", "relations.imports_out")
@@ -101,7 +121,9 @@ func _list(r: Dictionary, dir: String, title: String, color_id: String) -> Strin
 		if seen.size() >= LIST_MAX:
 			break
 		seen[other] = true
-		t += "   [url=%d]%s[/url]\n" % [other, _esc(names.get(str(other), "#%d" % other))]
+		var mark := "›" if targets.size() == cursor else "  "
+		targets.append(other)
+		t += " %s [url=%d]%s[/url]\n" % [mark, other, _esc(names.get(str(other), "#%d" % other))]
 	if total > seen.size():
 		t += "   [color=%s]… %d more[/color]\n" % [_hex("text3"), total - seen.size()]
 	return t

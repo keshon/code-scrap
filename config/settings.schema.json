@@ -123,6 +123,14 @@
           "default": true,
           "label": "Ground grid",
           "desc": "Dotted ground plane and horizon glow around the map."
+        },
+        {
+          "id": "viewport.minimap",
+          "surface": "display",
+          "type": "bool",
+          "default": true,
+          "label": "Minimap",
+          "desc": "The whole repository in a corner with the current view marked; click or drag it to move there."
         }
       ]
     },
@@ -242,6 +250,13 @@
           "step": 1.0,
           "label": "Label spacing",
           "desc": "Free space kept between labels (px): higher = fewer, calmer labels."
+        },
+        {
+          "id": "labels.dirs_on_walls",
+          "type": "bool",
+          "default": true,
+          "label": "Folder names on walls",
+          "desc": "3D: print folder names on the terrace wall facing you, like a sign; otherwise they float at the roof edge."
         }
       ]
     },
@@ -507,6 +522,29 @@
           "step": 0.05,
           "label": "Contact shading",
           "desc": "Walls darken toward their base so terraces and steps read."
+        },
+        {
+          "id": "look.palette",
+          "type": "enum",
+          "options": [
+            "pastel",
+            "neutral",
+            "cyan"
+          ],
+          "default": "pastel",
+          "scope": "server",
+          "label": "Area palette",
+          "desc": "Hues of the top-level areas: soft pastels, near-neutral greys, or an instrument-panel cyan family."
+        },
+        {
+          "id": "look.focus_dim",
+          "type": "float",
+          "default": 0.65,
+          "min": 0.0,
+          "max": 0.9,
+          "step": 0.05,
+          "label": "Focus dimming",
+          "desc": "2D: while a search or relation arcs are shown, dim everything else by this much. 0 = off."
         }
       ]
     },
@@ -794,6 +832,15 @@
           "default": "",
           "label": "Rules",
           "desc": "Glob = weight, separated by ; (e.g. src/legacy/** = 0.3; **/*.stories.tsx = 0.2). A repo's .scrap.json can add its own."
+        },
+        {
+          "id": "layout.stable",
+          "surface": "view",
+          "type": "bool",
+          "default": false,
+          "scope": "server",
+          "label": "Stable layout",
+          "desc": "Place siblings by name instead of largest first, so lenses and edits move boxes as little as possible."
         }
       ]
     },

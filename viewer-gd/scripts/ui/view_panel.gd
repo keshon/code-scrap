@@ -60,6 +60,7 @@ func _ready() -> void:
 		wb.add_child(SettingRow.new(id, true))
 	vb.add_child(_weights)
 	vb.add_child(SettingRow.new("git.since", true))
+	vb.add_child(SettingRow.new("layout.stable", true))
 
 	vb.add_child(HSeparator.new())
 	vb.add_child(_section("Relations"))

@@ -24,10 +24,11 @@ type Progress func(phase string, done, total int)
 
 // Options control what gets indexed and how.
 type Options struct {
-	SortByName bool    // stable alphabetical placement instead of largest-first
-	Precise    bool    // run the tree-sitter pass (slower, exact scopes)
-	NoGit      bool    // ignore git and walk the file system
-	CharAspect float64 // glyph width / line height of the text font (0 = default)
+	SortByName bool       // stable alphabetical placement instead of largest-first
+	Precise    bool       // run the tree-sitter pass (slower, exact scopes)
+	NoGit      bool       // ignore git and walk the file system
+	CharAspect float64    // glyph width / line height of the text font (0 = default)
+	Cache      *FileCache // reuse analysis of unchanged files (nil = parse everything)
 	Progress   Progress
 }
 
@@ -82,14 +83,7 @@ func Build(root string, opt Options) (*Map, error) {
 		progress = func(string, int, int) {}
 	}
 
-	var paths []string
-	if !opt.NoGit {
-		paths = gitFiles(abs)
-	}
-	if paths == nil {
-		paths = walkFiles(abs, progress)
-	}
-	slices.Sort(paths)
+	paths := listFiles(abs, opt.NoGit, progress)
 	progress("walk", len(paths), len(paths))
 
 	files := make([]rawFile, len(paths))
@@ -104,9 +98,11 @@ func Build(root string, opt Options) (*Map, error) {
 		order[i] = i
 	}
 	sizes := make([]int64, len(files))
+	mods := make([]int64, len(files))
 	for i := range files {
 		if st, err := os.Stat(files[i].abs); err == nil && st.Mode().IsRegular() {
 			sizes[i] = st.Size()
+			mods[i] = st.ModTime().UnixNano()
 		} else {
 			sizes[i] = -1
 		}
@@ -122,7 +118,10 @@ func Build(root string, opt Options) (*Map, error) {
 			defer wg.Done()
 			for i := range jobs {
 				files[i].size = sizes[i]
-				analyze(&files[i], opt.Precise)
+				if !opt.Cache.get(&files[i], mods[i], opt.Precise) {
+					analyze(&files[i], opt.Precise)
+					opt.Cache.put(&files[i], mods[i], opt.Precise)
+				}
 				if d := done.Add(1); d%500 == 0 {
 					progress("parse", int(d), len(files))
 				}
@@ -167,6 +166,28 @@ func Build(root string, opt Options) (*Map, error) {
 	m.heat()
 	m.Stats.LayoutMs = time.Since(t1).Milliseconds()
 	return m, nil
+}
+
+// ListFiles lists the files Build would map: git's tracked and untracked,
+// non-ignored files, or a walk of the tree without git.
+func ListFiles(root string, noGit bool) []string {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil
+	}
+	return listFiles(abs, noGit, func(string, int, int) {})
+}
+
+func listFiles(abs string, noGit bool, progress Progress) []string {
+	var paths []string
+	if !noGit {
+		paths = gitFiles(abs)
+	}
+	if paths == nil {
+		paths = walkFiles(abs, progress)
+	}
+	slices.Sort(paths)
+	return paths
 }
 
 func (t *tnode) insert(parts []string, file int) {

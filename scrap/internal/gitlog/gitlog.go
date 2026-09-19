@@ -5,8 +5,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/json"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // Stat is the history of one path.
@@ -78,4 +84,45 @@ func Read(ctx context.Context, root, since string) (map[string]Stat, error) {
 		res[p] = *s
 	}
 	return res, sc.Err()
+}
+
+// Head returns the commit the repository's HEAD points at ("" if none).
+func Head(ctx context.Context, root string) string {
+	out, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return string(bytes.TrimSpace(out))
+}
+
+// ReadCached is Read with a cache in dir keyed by HEAD, the day and the
+// window: history only changes with new commits (and relative windows
+// with the date), so restarts skip the slow git log.
+func ReadCached(ctx context.Context, root, since, dir string) (map[string]Stat, bool, error) {
+	head := Head(ctx, root)
+	if head == "" || dir == "" {
+		s, err := Read(ctx, root, since)
+		return s, false, err
+	}
+	name := fmt.Sprintf("git-%s-%s-%x.json", head[:min(12, len(head))], time.Now().Format("20060102"), sha1.Sum([]byte(since)))
+	p := filepath.Join(dir, name)
+	if b, err := os.ReadFile(p); err == nil {
+		var s map[string]Stat
+		if json.Unmarshal(b, &s) == nil {
+			return s, true, nil
+		}
+	}
+	s, err := Read(ctx, root, since)
+	if err != nil {
+		return nil, false, err
+	}
+	if b, err := json.Marshal(s); err == nil && os.MkdirAll(dir, 0o755) == nil {
+		// drop older git caches of this repository, then write ours
+		old, _ := filepath.Glob(filepath.Join(dir, "git-*.json"))
+		for _, o := range old {
+			os.Remove(o)
+		}
+		os.WriteFile(p, b, 0o644)
+	}
+	return s, false, nil
 }

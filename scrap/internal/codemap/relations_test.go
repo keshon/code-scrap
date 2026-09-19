@@ -29,7 +29,7 @@ func TestRelationsOnScrap(t *testing.T) {
 	for _, e := range out {
 		names[m.Nodes[e.To].Name] = true
 	}
-	for _, want := range []string{"gitFiles", "analyze", "assemble"} {
+	for _, want := range []string{"listFiles", "analyze", "assemble"} {
 		if !names[want] {
 			t.Errorf("Build should call %s; got %v", want, names)
 		}

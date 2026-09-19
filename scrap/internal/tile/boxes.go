@@ -103,6 +103,11 @@ func (b *Boxes) add(m *codemap.Map, id int32, r, tr codemap.Rect, scale float64)
 	b.push(r, tr, c, float32(n.Kind), float32(n.Depth), n.Top, id)
 	if r.Min()*scale >= minLabelPx {
 		h := codemap.Header(r)
+		if b.is3D && n.Kind == codemap.KindDir {
+			// 3D folder labels get the whole box, so the viewer can print
+			// the name on the wall that faces the camera
+			h = r
+		}
 		b.label(id, uint8(n.Kind), c, h, n.Top, tr, n.Name)
 	}
 }

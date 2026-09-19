@@ -35,6 +35,9 @@ const COMMANDS := [
 	["settings", "Settings", "Ctrl+,"], ["theme:calm", "Theme: Calm", ""], ["theme:fui", "Theme: FUI", ""],
 	["keymap:maya", "Keymap: Maya", ""], ["keymap:classic", "Keymap: Classic", ""],
 	["clear", "Clear search", "Esc"],
+	["relation_next", "Next relation", "]"], ["relation_prev", "Previous relation", "["],
+	["bookmark_1", "Go to bookmark 1", "1"], ["bookmark_save_1", "Save bookmark 1", "Ctrl+1"],
+	["toggle_minimap", "Toggle minimap", ""], ["toggle_stable", "Toggle stable layout", ""],
 ]
 
 var client: ScrapClient
@@ -50,6 +53,7 @@ var inspector: Inspector
 var search: SearchPopup
 var settings_panel: SettingsPanel
 var hud: Hud
+var minimap: Minimap
 var hello_info := {}
 var args := {}
 
@@ -66,6 +70,9 @@ var _pending := {}           # what to do with the next node reply: {parent, sel
 var _last_root := ""
 var _tree_sig := ""          # root + index pass: when it changes, node ids did
 var _selected_path := ""     # survives generations (ids do not)
+var _rel_anchor := -1        # whose relations are listed
+var _stepping := false       # selecting a relation target: keep the anchor's relations
+var _bookmark_2d := {}       # camera to apply once the 3D view has tilted back
 
 
 func _ready() -> void:
@@ -165,11 +172,16 @@ func _build_ui() -> void:
 	legend.area_clicked.connect(func(id): select_and_frame(id, true))
 	hud = Hud.new(map, city)
 	hud.z_index = 2000
-	hud.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	hud.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	hud.offset_left = 10
-	hud.offset_bottom = -10
+	hud.position = Vector2(10, 64)
 	views.add_child(hud)
+	minimap = Minimap.new(client, map, city)
+	minimap.z_index = 2000
+	minimap.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	minimap.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	minimap.offset_left = 10
+	minimap.offset_bottom = -10
+	views.add_child(minimap)
+	minimap.jump.connect(_jump_to)
 	settings_panel = SettingsPanel.new()
 	settings_panel.visible = false
 	settings_panel.z_index = 2001
@@ -268,6 +280,60 @@ func _on_city_exited(cx: float, cy: float, zoom: float) -> void:
 	map.visible = true
 	city.visible = false
 	map.grab_focus()
+	if not _bookmark_2d.is_empty():
+		map.fly_to(_bookmark_2d.cx, _bookmark_2d.cy, _bookmark_2d.zoom)
+		_bookmark_2d = {}
+
+
+## Minimap click/drag: centre the active view on a world point.
+func _jump_to(x: float, y: float) -> void:
+	if is_3d():
+		city.tx = x
+		city.ty = y
+		city._goal = {}
+		city._tween = {}
+		city._dirty = true
+	else:
+		map._fly = {}
+		map.cx = x
+		map.cy = y
+		map._zoom_target = map.zoom
+		map._dirty = true
+
+
+# ---------------------------------------------------------------- bookmarks
+
+## Ctrl+1..9: remember the view, the camera and the selection for this repo.
+func _save_bookmark(n: int) -> void:
+	var root := String(hello_info.get("root", ""))
+	if root == "":
+		return
+	var cam: Dictionary = city.camera_state() if is_3d() else map.camera_state()
+	Settings.set_bookmark(root, n, {"view": "3d" if is_3d() else "2d", "cam": cam, "path": _selected_path})
+	status.set_status("Bookmark %d saved · press %d to come back" % [n, n])
+
+
+## 1..9: fly back to a bookmark (false when there is none).
+func _go_bookmark(n: int) -> bool:
+	var b: Dictionary = Settings.bookmarks(String(hello_info.get("root", ""))).get(str(n), {})
+	if b.is_empty():
+		status.set_status("No bookmark %d · Ctrl+%d saves one" % [n, n])
+		return true
+	var cam: Dictionary = b.get("cam", {})
+	if b.get("view", "2d") == "3d":
+		if not is_3d():
+			set_view(true)
+		city.fly_to_state(cam)
+	elif is_3d():
+		_bookmark_2d = cam
+		set_view(false)
+	else:
+		map.fly_to(cam.cx, cam.cy, cam.zoom)
+	if String(b.get("path", "")) != "":
+		_pending = {"select": true, "fly": false}
+		_node_req = client.request("node", {"path": b.path})
+	status.set_status("Bookmark %d" % n)
+	return true
 
 
 ## Selects a node by id in the active view (and mirrors it into the other),
@@ -299,6 +365,11 @@ func _do_action(action: String) -> bool:
 	if action.begins_with("keymap:"):
 		Settings.set_value("ui.keymap", action.substr(7))
 		return true
+	if action.begins_with("bookmark_save_"):
+		_save_bookmark(int(action.substr(14)))
+		return true
+	if action.begins_with("bookmark_"):
+		return _go_bookmark(int(action.substr(9)))
 	match action:
 		"search":
 			search.focus()
@@ -335,6 +406,16 @@ func _do_action(action: String) -> bool:
 		"toggle_imports", "toggle_calls":
 			var id := "relations." + action.substr(7)
 			Settings.set_value(id, not Settings.get_value(id))
+		"relation_next", "relation_prev":
+			var id := inspector.step(1 if action == "relation_next" else -1)
+			if id < 0:
+				return false
+			_stepping = true
+			select_and_frame(id, true)
+		"toggle_minimap":
+			Settings.set_value("viewport.minimap", not Settings.get_value("viewport.minimap"))
+		"toggle_stable":
+			Settings.set_value("layout.stable", not Settings.get_value("layout.stable"))
 		"toggle_explorer":
 			Settings.set_value("ui.explorer", not Settings.get_value("ui.explorer"))
 		"open_folder":
@@ -355,7 +436,8 @@ func _send_server_settings() -> void:
 		if id.begins_with("importance."):
 			weights[id.substr(11)] = Settings.get_value(id)
 	client.request("options", {"weights": weights, "rules": Settings.get_value("importance.rules"),
-		"gitSince": Settings.get_value("git.since")})
+		"gitSince": Settings.get_value("git.since"), "stable": Settings.get_value("layout.stable"),
+		"palette": Settings.get_value("look.palette")})
 
 
 func _on_setting_changed(id: String, _v: Variant) -> void:
@@ -446,6 +528,10 @@ func _on_selected(id: int) -> void:
 		city.deselect()
 	elif id != _shown_node:
 		_node_req = client.request("node", {"node": id})
+	if _stepping:
+		# stepping through a relation list: the list stays the anchor's
+		_stepping = false
+		return
 	if changed:
 		_refresh_relations()
 
@@ -506,6 +592,7 @@ func _refresh_relations() -> void:
 	var imports: bool = Settings.get_value("relations.imports")
 	var calls: bool = Settings.get_value("relations.calls")
 	legend.set_relations(imports and _selected_id >= 0, calls and _selected_id >= 0)
+	_rel_anchor = _selected_id
 	if _selected_id < 0:
 		return
 	if imports:
@@ -529,7 +616,11 @@ func _push_arcs() -> void:
 				list.append({"a": nodes[str(int(e[0]))], "b": nodes[str(int(e[1]))], "color": Settings.get_value(REL_COLORS[op][dir])})
 	map.set_arcs(list)
 	city.set_arcs(list)
-	inspector.set_relations(_rel)
+	var anchor := ""
+	if _rel_anchor >= 0 and _rel_anchor != _selected_id:
+		for op in _rel:
+			anchor = String(_rel[op].get("names", {}).get(str(_rel_anchor), ""))
+	inspector.set_relations(_rel, anchor)
 
 
 # ---------------------------------------------------------------- search hits

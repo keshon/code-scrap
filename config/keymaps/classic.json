@@ -2,25 +2,193 @@
   "name": "Classic",
   "desc": "No modifiers: left drag pans, right drag orbits (3D), click selects. Friendly to trackpads and maps.",
   "mouse": [
-    {"action": "pan", "button": "left", "mods": [], "click": "select"},
-    {"action": "orbit", "button": "right", "mods": []},
-    {"action": "orbit", "button": "left", "mods": ["shift"]},
-    {"action": "pan", "button": "middle", "mods": []}
+    {
+      "action": "pan",
+      "button": "left",
+      "mods": [],
+      "click": "select"
+    },
+    {
+      "action": "orbit",
+      "button": "right",
+      "mods": []
+    },
+    {
+      "action": "orbit",
+      "button": "left",
+      "mods": [
+        "shift"
+      ]
+    },
+    {
+      "action": "pan",
+      "button": "middle",
+      "mods": []
+    }
   ],
   "wheel": [
-    {"action": "zoom", "mods": []}
+    {
+      "action": "zoom",
+      "mods": []
+    }
   ],
   "keys": [
-    {"action": "frame_selected", "key": "F"},
-    {"action": "frame_all", "key": "Home"},
-    {"action": "frame_all", "key": "A"},
-    {"action": "deselect", "key": "Q"},
-    {"action": "select_parent", "key": "Backspace"},
-    {"action": "toggle_view", "key": "Tab"},
-    {"action": "search", "key": "Slash"},
-    {"action": "search", "key": "K", "mods": ["ctrl"]},
-    {"action": "clear", "key": "Escape"},
-    {"action": "settings", "key": "Comma", "mods": ["ctrl"]},
-    {"action": "toggle_hud", "key": "F12"}
+    {
+      "action": "frame_selected",
+      "key": "F"
+    },
+    {
+      "action": "frame_all",
+      "key": "Home"
+    },
+    {
+      "action": "frame_all",
+      "key": "A"
+    },
+    {
+      "action": "deselect",
+      "key": "Q"
+    },
+    {
+      "action": "select_parent",
+      "key": "Backspace"
+    },
+    {
+      "action": "toggle_view",
+      "key": "Tab"
+    },
+    {
+      "action": "search",
+      "key": "Slash"
+    },
+    {
+      "action": "search",
+      "key": "K",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "clear",
+      "key": "Escape"
+    },
+    {
+      "action": "settings",
+      "key": "Comma",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "toggle_hud",
+      "key": "F12"
+    },
+    {
+      "action": "bookmark_save_1",
+      "key": "1",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_1",
+      "key": "1"
+    },
+    {
+      "action": "bookmark_save_2",
+      "key": "2",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_2",
+      "key": "2"
+    },
+    {
+      "action": "bookmark_save_3",
+      "key": "3",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_3",
+      "key": "3"
+    },
+    {
+      "action": "bookmark_save_4",
+      "key": "4",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_4",
+      "key": "4"
+    },
+    {
+      "action": "bookmark_save_5",
+      "key": "5",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_5",
+      "key": "5"
+    },
+    {
+      "action": "bookmark_save_6",
+      "key": "6",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_6",
+      "key": "6"
+    },
+    {
+      "action": "bookmark_save_7",
+      "key": "7",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_7",
+      "key": "7"
+    },
+    {
+      "action": "bookmark_save_8",
+      "key": "8",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_8",
+      "key": "8"
+    },
+    {
+      "action": "bookmark_save_9",
+      "key": "9",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "action": "bookmark_9",
+      "key": "9"
+    },
+    {
+      "action": "relation_next",
+      "key": "BracketRight"
+    },
+    {
+      "action": "relation_prev",
+      "key": "BracketLeft"
+    }
   ]
 }

@@ -3,6 +3,7 @@ package codemap
 import (
 	"cmp"
 	"slices"
+	"strings"
 )
 
 // View selects how the map is shaped and colored. Every lens is optional;
@@ -19,6 +20,12 @@ type View struct {
 	// Rules give matching paths their own weight, over the class weights;
 	// the last matching rule wins (repo rules come after the user's).
 	Rules []Rule `json:"rules,omitempty"`
+
+	// Stable lays siblings out by name instead of largest first, so lenses
+	// and edits move boxes as little as possible.
+	Stable bool `json:"stable,omitempty"`
+	// Palette names the area hue set (tile.Palettes); "" = the default.
+	Palette string `json:"palette,omitempty"`
 }
 
 // Height modes besides the metrics.
@@ -174,19 +181,19 @@ func (m *Map) reweigh() {
 			}
 		}
 	}
-	if m.sortByName {
-		return
-	}
+	byName := m.sortByName || m.View.Stable
 	for i := range m.Nodes {
 		n := &m.Nodes[i]
 		if n.Kind != KindDir {
 			continue
 		}
 		slices.SortStableFunc(n.Children, func(a, b int32) int {
-			if c := cmp.Compare(m.Nodes[b].Weight, m.Nodes[a].Weight); c != 0 {
-				return c
+			if !byName {
+				if c := cmp.Compare(m.Nodes[b].Weight, m.Nodes[a].Weight); c != 0 {
+					return c
+				}
 			}
-			return cmp.Compare(m.Nodes[a].Name, m.Nodes[b].Name)
+			return cmp.Compare(strings.ToLower(m.Nodes[a].Name), strings.ToLower(m.Nodes[b].Name))
 		})
 	}
 }

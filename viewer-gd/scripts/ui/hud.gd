@@ -47,11 +47,14 @@ func _process(dt: float) -> void:
 	var ev: int = v.stat_evicted
 	var rate := (ev - int(_last.get("ev", ev))) / _acc
 	_last.ev = ev
+	var rd: int = v.stat_redraws
+	var redraws := (rd - int(_last.get("rd", rd))) / _acc
+	_last.rd = rd
 	var lines := [
 		"%s · %.1f ms avg · %.1f ms worst · %d fps" % ["3D" if three else "2D", _acc / _frames * 1000.0, _worst * 1000.0, int(_frames / _acc)],
 		"tiles   shown %d · pending %d · cached %d · evicted %.0f/s" % [v.stat_shown, v.stat_missing, v.tile_count(), rate],
 		"text    wanted %d · pending %d · drawn %d" % [tl.stat_wanted, tl.stat_missing, tl.stat_visible],
-		"map     gen %d · %d generations seen" % [v.gen, v.stat_gens],
+		"map     gen %d · %d generations seen · %.0f redraws/s %s" % [v.gen, v.stat_gens, redraws, str(v.why) if not v.why.is_empty() else ""],
 	]
 	if not three:
 		lines.append("level   %d · zoom %s px/unit" % [map._level, String.num(map.zoom, 1)])

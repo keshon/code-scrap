@@ -36,6 +36,11 @@ var _overlay: Control
 var _quad: ArrayMesh
 var _box_mat: ShaderMaterial
 var _grid: ColorRect
+var _dim: ColorRect          # focus + context: darkens all but the mask
+var _mask_vp: SubViewport
+var _mask: Control
+var _arc_lines := []         # drawn arcs this frame: {pts, text}
+var _arc_hover := -1
 var _level := -1
 
 # diagnostics (HUD)
@@ -43,6 +48,8 @@ var stat_shown := 0
 var stat_missing := 0
 var stat_evicted := 0
 var stat_gens := 0
+var stat_redraws := 0        # full view updates (tiles, text, labels) so far
+var why := {}                # what asked for the last redraws (diagnostics)
 var _dirty := true
 var _last_request := ""
 var _frame := 0
@@ -107,6 +114,22 @@ func _ready() -> void:
 	add_child(_grid)
 	_tiles_root = Node2D.new()
 	add_child(_tiles_root)
+	_mask_vp = SubViewport.new()
+	_mask_vp.transparent_bg = false
+	_mask_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(_mask_vp)
+	_mask = Control.new()
+	_mask.draw.connect(_draw_mask)
+	_mask_vp.add_child(_mask)
+	_dim = ColorRect.new()
+	_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dim.z_index = 900  # over tiles and code text, under labels and arcs
+	_dim.material = ShaderMaterial.new()
+	(_dim.material as ShaderMaterial).shader = load("res://shaders/dim.gdshader")
+	(_dim.material as ShaderMaterial).set_shader_parameter("mask", _mask_vp.get_texture())
+	_dim.visible = false
+	add_child(_dim)
 	_overlay = Control.new()
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -188,6 +211,11 @@ func home(animate := true) -> void:
 
 ## Smooth zoom-out/pan/zoom-in (van Wijk & Nuij, "Smooth and efficient
 ## zooming and panning", 2003). w = visible world width.
+## The camera, for bookmarks.
+func camera_state() -> Dictionary:
+	return {"cx": cx, "cy": cy, "zoom": _zoom_target}
+
+
 func fly_to(tx: float, ty: float, tzoom: float) -> void:
 	var w0 := size.x / zoom
 	var w1 := size.x / tzoom
@@ -256,6 +284,7 @@ func _process(dt: float) -> void:
 		_dirty = true  # text fades in/out
 	if _dirty and gen >= 0:
 		_dirty = false
+		stat_redraws += 1
 		_update_tiles()
 		_overlay.queue_redraw()
 		camera_changed.emit()
@@ -488,6 +517,10 @@ func _gui_input(ev: InputEvent) -> void:
 	elif ev is InputEventMouseMotion:
 		var mm := ev as InputEventMouseMotion
 		_last_mouse = mm.position
+		var ah := _pick_arc(mm.position) if not _arc_lines.is_empty() else -1
+		if ah != _arc_hover:
+			_arc_hover = ah
+			_overlay.queue_redraw()
 		if not _drag.is_empty() and _drag.has("action"):
 			if not _dragging and mm.position.distance_to(_press_pos) > 4.0:
 				_dragging = true
@@ -635,8 +668,11 @@ func _draw_overlay() -> void:
 		var s := rect_to_screen(current_hit)
 		o.draw_rect(s.grow(1), Color(HIT_COLOR, 0.35))
 		o.draw_rect(s.grow(1), HIT_COLOR, false, 1.5)
+	_update_dim()
+	_arc_lines = []
 	if Settings.get_value("viewport.arcs"):
 		_draw_arcs()
+		_draw_arc_tip()
 	if Settings.get_value("viewport.labels"):
 		_draw_labels()
 	# hover + selection
@@ -730,7 +766,8 @@ func _draw_arcs() -> void:
 		if bundles.has(key):
 			bundles[key].n += 1
 		else:
-			bundles[key] = {"a": ka if ka is Vector2 else a, "b": kb if kb is Vector2 else b, "c": arc.color, "n": 1}
+			bundles[key] = {"a": ka if ka is Vector2 else a, "b": kb if kb is Vector2 else b, "c": arc.color, "n": 1,
+				"kind": arc.get("kind", ""), "text": "%s → %s · %s" % [arc.get("an", "?"), arc.get("bn", "?"), arc.get("kind", "")]}
 	var alpha: float = clamp(60.0 / max(bundles.size(), 1), top_a * 0.2, top_a)
 	for bd in bundles.values():
 		var a: Vector2 = bd.a
@@ -748,6 +785,10 @@ func _draw_arcs() -> void:
 		var c: Color = bd.c
 		var w: float = width * (1.0 + log(float(bd.n)) / log(2.0) * 0.6)
 		var ca := Color(c, min(alpha * (1.0 + 0.15 * (bd.n - 1)), top_a))
+		var hovered := _arc_lines.size() == _arc_hover
+		_arc_lines.append({"pts": pts, "text": bd.text if bd.n == 1 else "%d %s arcs · %s" % [bd.n, bd.kind, bd.text]})
+		if hovered:
+			o.draw_polyline(pts, Color(c, 1.0), w + 2.0, true)
 		o.draw_polyline(pts, ca, w, true)
 		if arrows:
 			# arrowhead at the imported/called end
@@ -761,6 +802,70 @@ func _draw_arcs() -> void:
 				o.draw_primitive(PackedVector2Array([tip, tip - dir * s + side * s * 0.45, tip - dir * s - side * s * 0.45]),
 					PackedColorArray([ac, ac, ac]), PackedVector2Array())
 		o.draw_circle(pts[0], 1.5 + w * 0.5, ca)
+
+
+## Tooltip for the arc under the cursor: its ends and what kind it is.
+func _draw_arc_tip() -> void:
+	if _arc_hover < 0 or _arc_hover >= _arc_lines.size():
+		return
+	var text: String = _arc_lines[_arc_hover].text
+	var fs: int = Settings.get_value("labels.font_size")
+	var font := Style.font("ui", 500)
+	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var r := Rect2(_last_mouse + Vector2(14, 10), Vector2(tw + 14, fs + 10))
+	if r.end.x > size.x:
+		r.position.x = _last_mouse.x - r.size.x - 8
+	_overlay.draw_rect(r, Color(Style.color("raised"), 0.96))
+	_overlay.draw_string(font, r.position + Vector2(7, fs + 2), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Style.color("text"))
+
+
+## The arc nearest to the cursor, within a few pixels (-1 = none).
+func _pick_arc(p: Vector2) -> int:
+	var best := -1
+	var best_d := 6.0
+	for i in _arc_lines.size():
+		var pts: PackedVector2Array = _arc_lines[i].pts
+		for k in range(1, pts.size()):
+			var d := Geometry2D.get_closest_point_to_segment(p, pts[k - 1], pts[k]).distance_to(p)
+			if d < best_d:
+				best_d = d
+				best = i
+	return best
+
+
+## Focus + context: while search hits or relation arcs are on screen, dim
+## everything but them (and the selection).
+func _update_dim() -> void:
+	var amount: float = Settings.get_value("look.focus_dim")
+	var active: bool = amount > 0.0 and ((not hit_files.is_empty() and Settings.get_value("viewport.search_hits")) \
+		or (not arcs.is_empty() and Settings.get_value("viewport.arcs")))
+	_dim.visible = active
+	_mask_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
+	if not active:
+		return
+	var f := get_window().content_scale_factor
+	_mask_vp.size = Vector2i((size * f).round())
+	_mask.size = size * f
+	(_dim.material as ShaderMaterial).set_shader_parameter("amount", amount)
+	(_dim.material as ShaderMaterial).set_shader_parameter("tint", Style.color("bg"))
+	_mask.queue_redraw()
+
+
+func _draw_mask() -> void:
+	var f := get_window().content_scale_factor
+	var keep := func(r: Array):
+		var s := rect_to_screen(r)
+		_mask.draw_rect(Rect2(s.position * f, s.size * f).grow(2.0 * f), Color.WHITE)
+	_mask.draw_rect(Rect2(Vector2.ZERO, _mask.size), Color.BLACK)
+	if Settings.get_value("viewport.search_hits"):
+		for r in hit_files:
+			keep.call(r)
+	if Settings.get_value("viewport.arcs"):
+		for arc in arcs:
+			keep.call(arc.a)
+			keep.call(arc.b)
+	if selection_rect.size() == 4:
+		keep.call(selection_rect)
 
 
 ## An endpoint's bundling key: its snapped cell centre when the box is

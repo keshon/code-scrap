@@ -7,6 +7,40 @@ import (
 	"github.com/keshon/code-scrap/scrap/internal/syntax"
 )
 
+// Palettes are the area hue sets, chosen by View.Palette.
+var Palettes = map[string]*[16][3]float32{
+	"pastel":  &hues,
+	"neutral": &neutralHues,
+	"cyan":    &cyanHues,
+}
+
+// PaletteNames lists the palettes in menu order.
+var PaletteNames = []string{"pastel", "neutral", "cyan"}
+
+func paletteOf(m *codemap.Map) *[16][3]float32 {
+	if p, ok := Palettes[m.View.Palette]; ok {
+		return p
+	}
+	return &hues
+}
+
+// neutralHues: Modo-like greys with a faint tint, so structure reads
+// without color competing with lenses.
+var neutralHues = [16][3]float32{
+	{0.66, 0.70, 0.74}, {0.72, 0.70, 0.66}, {0.64, 0.68, 0.66}, {0.70, 0.66, 0.70},
+	{0.62, 0.66, 0.72}, {0.72, 0.72, 0.66}, {0.68, 0.64, 0.64}, {0.64, 0.70, 0.70},
+	{0.70, 0.68, 0.72}, {0.66, 0.66, 0.62}, {0.60, 0.66, 0.68}, {0.72, 0.68, 0.64},
+	{0.66, 0.72, 0.68}, {0.68, 0.66, 0.72}, {0.70, 0.70, 0.70}, {0.62, 0.64, 0.66},
+}
+
+// cyanHues: an instrument-panel family of cyans and steel blues.
+var cyanHues = [16][3]float32{
+	{0.30, 0.90, 0.85}, {0.45, 0.70, 0.95}, {0.35, 0.80, 0.70}, {0.55, 0.85, 0.95},
+	{0.30, 0.75, 0.90}, {0.60, 0.95, 0.85}, {0.40, 0.65, 0.85}, {0.50, 0.90, 0.75},
+	{0.35, 0.85, 0.95}, {0.65, 0.80, 0.95}, {0.30, 0.70, 0.75}, {0.55, 0.95, 0.95},
+	{0.45, 0.80, 0.85}, {0.40, 0.90, 0.80}, {0.60, 0.75, 0.90}, {0.50, 0.70, 0.80},
+}
+
 // Area hues: soft pastels that read well as thin outlines on near-black.
 var hues = [16][3]float32{
 	{0.45, 0.85, 0.76}, // teal
@@ -32,12 +66,13 @@ var (
 	grey    = [3]float32{0.50, 0.52, 0.56}
 )
 
-// AreaColor is the outline color of an area hue (for legends).
-func AreaColor(hue uint8) [3]float32 {
+// AreaColor is the outline color of an area hue under a map's palette
+// (for legends and tree views).
+func AreaColor(m *codemap.Map, hue uint8) [3]float32 {
 	if hue == codemap.HueNeutral {
 		return neutral
 	}
-	return hues[hue%16]
+	return paletteOf(m)[hue%16]
 }
 
 // HeatRamp samples the metric color ramp at n evenly spaced points (for
@@ -78,7 +113,7 @@ func BoxColor(m *codemap.Map, n *codemap.Node) [4]float32 {
 	}
 	c := neutral
 	if n.Hue != codemap.HueNeutral {
-		c = hues[n.Hue%16]
+		c = paletteOf(m)[n.Hue%16]
 	}
 	if n.Kind != codemap.KindDir {
 		f := &m.Files[n.File]

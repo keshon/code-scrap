@@ -65,9 +65,15 @@ Mouse and keys come from a keymap (`config/keymaps/*.json`, picked in **Settings
 | `Backspace` | select and fly to the parent |
 | `Esc` | close settings / clear search |
 | `Ctrl+,` | settings |
-| `F12` | diagnostics overlay (frame time, tile and text streaming) |
+| `F12` | diagnostics overlay (frame time, tile and text streaming, redraws) |
+| `Ctrl+1` … `9` / `1` … `9` | save a bookmark (view, camera, selection) / go back to it |
+| `]` / `[` | step through the selection's relations (Inspector list) |
 
 The *Classic* keymap keeps the old scheme: left drag pans, right drag orbits, `Home` frames all.
+
+### Server: cache and watching
+
+`scrap serve` keeps each file's analysis (keyed by path, size and time) and the git history (keyed by HEAD) in the user cache folder, so a restart on a big repository takes well under a second. It also watches the open folder and re-indexes changed files within a couple of seconds. `-no-cache` and `-no-watch` turn these off.
 
 ### Settings and presets
 

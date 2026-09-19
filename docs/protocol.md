@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **5** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **6** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 6 | `overview` op (minimap). `options` accepts `stable` and `palette`. In 3D tiles, folder labels carry the whole box rect (for wall signs). |
 | 5 | Labels carry the box color (`u8 r, g, b`) and, for scopes, the scope kind in the kind byte's high nibble. Scope instances: kind = 2 + scope kind / 10, depth = nesting inside the file. `options` accepts `rules`. |
 | 4 | `children` op. `search` also returns `paths`/`pathTotal` (files and folders). `node` accepts `path` instead of `node`. |
 | 3 | `hello.lenses` (lens descriptors) and `hello.legend`. `node.ancestors`. Relation replies carry `names`. |
@@ -37,6 +38,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 | `texts` | `gen`, `texts: [[fileNode, col, seg], …]` | binary text frames. The list replaces the pending text queue. Tiles go first. |
 | `font` | — | one binary font-atlas frame |
 | `node` | `node`, or `path` (a file or folder, stable across generations) | `node` |
+| `overview` | — | `{"op": "overview", "world", "boxes": [x, y, w, h, r, g, b, kind, …]}`: folders and files a few levels deep, big enough to see at minimap size |
 | `children` | `node` | `{"op": "children", "node", "items": [{node, name, kind, lines, kids, color}]}`: dirs, then files, then scopes |
 | `pick` | `x`, `y` (world), `scale` (px per world unit) | `pick` |
 | `pickRay` | `ray: [ox, oy, oz, dx, dy, dz]` (world units, Y up) | `pick` with `t` (ray distance) |
@@ -44,7 +46,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 | `search` | `q` (symbol-name prefix), `page`, `size` (≤ 500) | `search` |
 | `edges` | `node` | relations: imports (file level) |
 | `calls` | `node` | relations: syntax-level call graph |
-| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince` | no reply. The map rebuilds and a new `hello` follows when anything changed. |
+| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince`, `stable` (layout by name), `palette` (`pastel` · `neutral` · `cyan`) | no reply. The map rebuilds and a new `hello` follows when anything changed. |
 | `open` | `path` | new `hello` once indexed, or `{"op": "error", "error": …}` |
 
 ## Messages (server → viewer)
@@ -53,7 +55,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 5, "gen": 3,
+  "op": "hello", "protocol": 6, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,
