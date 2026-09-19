@@ -243,3 +243,33 @@ func TestLegendData(t *testing.T) {
 		}
 	}
 }
+
+func TestFindPathsAndChildren(t *testing.T) {
+	m := fixture(t, false)
+	hits, total := m.FindPaths("b.t", 10)
+	if total < 2 || m.Path(hits[0].Node) != "src/b.ts" {
+		t.Errorf("b.t: want src/b.ts first; got %d hits, first %s", total, m.Path(hits[0].Node))
+	}
+	hits, _ = m.FindPaths("src deep", 10)
+	if len(hits) == 0 || !strings.HasPrefix(m.Path(hits[0].Node), "src/deep") {
+		t.Errorf("multi-term search failed: %v", hits)
+	}
+	kids := m.Children(0)
+	if len(kids) == 0 || m.Nodes[kids[0]].Kind != KindDir {
+		t.Fatal("root children should start with directories")
+	}
+	for i := 1; i < len(kids); i++ {
+		a, b := &m.Nodes[kids[i-1]], &m.Nodes[kids[i]]
+		if a.Kind == b.Kind && strings.ToLower(a.Name) > strings.ToLower(b.Name) {
+			t.Errorf("children out of order: %s before %s", a.Name, b.Name)
+		}
+	}
+}
+
+func TestLookup(t *testing.T) {
+	m := fixture(t, false)
+	b := fileByPath(t, m, "src/b.ts")
+	if m.Lookup("src/b.ts") != b.Node || m.Lookup("src") < 0 || m.Lookup("nope") != -1 || m.Lookup("") != 0 {
+		t.Error("Lookup by path failed")
+	}
+}

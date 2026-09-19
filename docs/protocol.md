@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **3** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **4** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 4 | `children` op. `search` also returns `paths`/`pathTotal` (files and folders). `node` accepts `path` instead of `node`. |
 | 3 | `hello.lenses` (lens descriptors) and `hello.legend`. `node.ancestors`. Relation replies carry `names`. |
 | 2 | Text blocks carry a content key (`u32 key`) in tile frames and text frames. `hello.protocol` added. `options` accepts `weights` and `gitSince`. |
 | 1 | Initial (unversioned). |
@@ -34,7 +35,8 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 | `tiles` | `gen`, `dim` (2 flat · 3 city), `keys: [[z, x, y], …]` in priority order | binary tile frames. The list **replaces** the pending queue. |
 | `texts` | `gen`, `texts: [[fileNode, col, seg], …]` | binary text frames. The list replaces the pending text queue. Tiles go first. |
 | `font` | — | one binary font-atlas frame |
-| `node` | `node` | `node` |
+| `node` | `node`, or `path` (a file or folder, stable across generations) | `node` |
+| `children` | `node` | `{"op": "children", "node", "items": [{node, name, kind, lines, kids, color}]}`: dirs, then files, then scopes |
 | `pick` | `x`, `y` (world), `scale` (px per world unit) | `pick` |
 | `pickRay` | `ray: [ox, oy, oz, dx, dy, dz]` (world units, Y up) | `pick` with `t` (ray distance) |
 | `heights` | `pts: [[x, y], …]` | `{"op": "heights", "h": [roof height, …]}` |
@@ -50,7 +52,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 3, "gen": 3,
+  "op": "hello", "protocol": 4, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,
@@ -95,6 +97,7 @@ The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lin
 
 - `files: [[x, y, w, h, top], …]` lists every file with a hit.
 - `hits: [{node, fileNode, path, line, name, kind, rect, top}, …]`: `rect` is the line's rectangle.
+- `paths: [{node, path, name, kind, rect, top}, …]` (page 0, best 50): files and folders whose path contains every word of `q`, name matches first; `pathTotal` counts all.
 
 ### Relations (`edges`, `calls`)
 

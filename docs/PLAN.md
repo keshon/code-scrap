@@ -167,6 +167,26 @@ All three are token presets on the same components, so switching later is cheap.
 
 ---
 
+## Phase 3.1 — UI map (review of 2026-09-19)
+
+After testing Phase 3, the rule: **every control has exactly one home.** A setting's `surface` in the schema names it; the settings panel shows only tunables (no surface).
+
+| Home | Owns | Not here |
+|---|---|---|
+| **Top bar** | app-level: Explorer toggle, repository (open, recent), 2D/3D, preset, the one search/command field, settings | camera commands, viewing modes |
+| **Explorer** (left, optional) | the tree: folders → files → functions; follows the selection | — |
+| **Viewport header**, three islands | breadcrumb (segment = select, › = what is inside), **Camera** (frame all/selected, deselect, parent, 2D/3D), **☰ display** (labels, code text, hover, search highlights, arcs, legend, diagnostics) | lenses |
+| **Right pane** | **Inspector** (selection, metrics, clickable relations) · **View** (height, grayed in 2D · color · importance + weights · git window · import/call arcs) | display toggles |
+| **Search dropdown** | under the top-bar field: files and folders by path, symbols by name prefix, `>` commands; ↑↓ Enter Esc | a separate results tab |
+| **Settings** | tunables: widths, colors, budgets, speeds, theme, keymap, scale | toggles that have a home above |
+| **Legend** (viewport corner) | explains colors, arcs, highlights; areas are clickable | — |
+
+The Frame all / Frame selected buttons that used to sit in the top bar now live only in the Camera island.
+
+Done (2026-09-19). Protocol v4 adds `children` (tree and breadcrumb menus), path hits in `search`, and `node` by `path` (ids change between generations, paths do not).
+
+---
+
 ## Phase 4 — Viewport polish (points 8–11, 13, 16, 18)
 
 ### 4.1 Selection and hover styles (point 8), in the ☰ menu and settings

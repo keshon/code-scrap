@@ -78,6 +78,7 @@ func _ready() -> void:
 
 	_filter = LineEdit.new()
 	_filter.placeholder_text = "Find a setting…"
+	_filter.tooltip_text = "Tunables only. Toggles live where they act: the viewport ☰ menu, the View tab and the top bar."
 	_filter.clear_button_enabled = true
 	_filter.right_icon = Style.icon("search")
 	_filter.text_changed.connect(func(_t): _apply_filter())
@@ -92,6 +93,11 @@ func _ready() -> void:
 	scroll.add_child(_body)
 
 	for g in Settings.groups:
+		# toggles with a home elsewhere (☰ menu, View tab, top bar) are
+		# changed there only; this panel holds the tunables
+		var own: Array = g.settings.filter(func(x): return not x.has("surface"))
+		if own.is_empty():
+			continue
 		var fc := FoldableContainer.new()
 		fc.title = Style.text(g.label)
 		fc.folded = g.id in ["importance", "history", "performance"]
@@ -100,7 +106,7 @@ func _ready() -> void:
 		fc.add_child(box)
 		_body.add_child(fc)
 		var rows := []
-		for s in g.settings:
+		for s in own:
 			var row := SettingRow.new(s.id)
 			box.add_child(row)
 			rows.append(row)

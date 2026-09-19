@@ -15,7 +15,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 3
+const Protocol = 4
 
 func hello(st *state) map[string]any {
 	m := st.m
@@ -221,7 +221,6 @@ func search(st *state, q string, page, size int) map[string]any {
 	}
 	t := time.Now()
 	res := st.m.Search(q, page, size)
-	ms := float64(time.Since(t).Microseconds()) / 1000
 	m := st.m
 	hits := make([]map[string]any, 0, len(res.Hits))
 	for _, h := range res.Hits {
@@ -237,10 +236,39 @@ func search(st *state, q string, page, size int) map[string]any {
 		n := &m.Nodes[m.Files[fi].Node]
 		files = append(files, [5]float64{n.Rect.X, n.Rect.Y, n.Rect.W, n.Rect.H, n.Top})
 	}
+	// files and directories whose path matches (first page only)
+	paths := []map[string]any{}
+	pathTotal := 0
+	if page == 0 {
+		var ph []codemap.PathHit
+		ph, pathTotal = m.FindPaths(q, 50)
+		for _, p := range ph {
+			n := &m.Nodes[p.Node]
+			paths = append(paths, map[string]any{
+				"node": p.Node, "path": m.Path(p.Node), "name": n.Name, "kind": n.Kind.String(),
+				"rect": rect(n.Rect), "top": n.Top,
+			})
+		}
+	}
 	return map[string]any{
 		"op": "search", "q": q, "page": page, "total": res.Total, "more": res.More,
-		"hits": hits, "files": files, "ms": ms,
+		"hits": hits, "files": files, "ms": float64(time.Since(t).Microseconds()) / 1000,
+		"paths": paths, "pathTotal": pathTotal,
 	}
+}
+
+// children lists a node's children for tree views and breadcrumb menus.
+func children(st *state, id int32) map[string]any {
+	m := st.m
+	items := []map[string]any{}
+	for _, c := range m.Children(id) {
+		n := &m.Nodes[c]
+		items = append(items, map[string]any{
+			"node": c, "name": n.Name, "kind": n.Kind.String(), "lines": n.Lines,
+			"kids": len(n.Children), "color": tile.AreaColor(n.Hue),
+		})
+	}
+	return map[string]any{"op": "children", "node": id, "items": items}
 }
 
 // Binary tile frame, little endian:

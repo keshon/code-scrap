@@ -75,16 +75,18 @@ Every tunable (UI scale and theme, camera, labels, code text, highlight and arc 
 
 ### Layout
 
+Every control has one home ([docs/PLAN.md](docs/PLAN.md), "UI map").
+
 | Zone | What's there |
 |---|---|
-| Top bar | repository (open, recent), 2D / 3D, settings preset, **search field** (symbol prefix; start with `>` for commands), settings |
-| Left: Display panel | lenses (height, color, importance weights, git window) with what each one means, overlays (imports, calls, labels, code text) |
-| Viewport header | breadcrumb of the selection (click to go up), Camera menu, ☰ display toggles |
+| Top bar | Explorer toggle, repository (open, recent), 2D / 3D, settings preset, **search** (files and folders by path, symbols by prefix; `>` for commands), settings |
+| Explorer (left) | the file tree, down to functions; follows the selection |
+| Viewport header | breadcrumb (click a segment to select it, › to list what is inside) · Camera menu · ☰ display toggles |
 | Legend (bottom right) | what colors and arcs mean; click an area to frame it |
-| Right panel | Inspector (with clickable imports / callers lists) and search results |
+| Right pane | **Inspector** (with clickable imports / callers) · **View** (lenses, importance, relations) |
 | Status bar | server, index progress, hover, keymap hints, fps |
 
-### Lenses (Display panel)
+### Lenses (View tab)
 
 Every lens is optional; the defaults show the plain map.
 

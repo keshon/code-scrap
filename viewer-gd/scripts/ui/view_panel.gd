@@ -1,12 +1,14 @@
-class_name DisplayPanel
-extends PanelContainer
-## Left zone: how the map is shaped and colored (lenses, from the server's
-## descriptors) and what is drawn on top (overlays). Everything here is a
-## persistent viewing mode, so each control shows what it means.
+class_name ViewPanel
+extends ScrollContainer
+## Right pane "View" tab: how the map is shaped and colored (lenses, from
+## the server's descriptors, with what each one means) and which relations
+## are drawn. Display toggles (labels, text, highlights) live in the
+## viewport's ☰ menu, tunables in Settings: each control has one home.
 
 signal lens_changed(view: Dictionary)   # {height, color, importance}
 
 var _height_opt: OptionButton
+var _height_caption: Label
 var _color_opt: OptionButton
 var _height_desc: Label
 var _color_desc: Label
@@ -19,17 +21,16 @@ var _syncing := false
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(260, 0)
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(scroll)
+	name = "View"
+	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var vb := VBoxContainer.new()
 	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vb.add_theme_constant_override("separation", 10)
-	scroll.add_child(vb)
+	add_child(vb)
 
 	vb.add_child(_section("Lenses"))
-	vb.add_child(_caption("Height (3D)"))
+	_height_caption = _caption("Height")
+	vb.add_child(_height_caption)
 	_height_opt = _picker()
 	_height_opt.item_selected.connect(func(_i): _emit())
 	vb.add_child(_height_opt)
@@ -61,11 +62,11 @@ func _ready() -> void:
 	vb.add_child(SettingRow.new("git.since", true))
 
 	vb.add_child(HSeparator.new())
-	vb.add_child(_section("Overlays"))
+	vb.add_child(_section("Relations"))
+	var rdesc := _desc()
+	rdesc.text = "Arcs from and to the selection. Colors and opacity: Settings → Relations."
+	vb.add_child(rdesc)
 	for id in ["relations.imports", "relations.calls"]:
-		vb.add_child(SettingRow.new(id, true))
-	vb.add_child(SettingRow.new("relations.opacity", true))
-	for id in ["viewport.labels", "viewport.code_text", "viewport.search_hits"]:
 		vb.add_child(SettingRow.new(id, true))
 
 	_set_lenses(_fallback_heights(), _fallback_colors())
@@ -84,6 +85,14 @@ func sync(info: Dictionary) -> void:
 	_importance.button_pressed = v.get("importance", false)
 	_describe()
 	_syncing = false
+
+
+## Height only shapes the 3D city: grayed out on the flat map.
+func set_3d(on: bool) -> void:
+	_height_opt.disabled = not on
+	_height_desc.modulate.a = 1.0 if on else 0.5
+	_height_caption.text = Style.text("Height") if on else Style.text("Height · 3D only")
+	_height_opt.tooltip_text = "" if on else "Building height applies to the 3D city (Tab)"
 
 
 func current_view() -> Dictionary:

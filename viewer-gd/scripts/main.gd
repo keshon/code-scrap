@@ -1,11 +1,15 @@
 extends Control
 ## App shell: lays out the zones and wires them to the views and the server.
 ##
-##   top bar      app · repository · 2D|3D · preset · search/commands · settings
-##   left         Display panel: lenses and overlays
-##   viewport     header (breadcrumb, camera, display ☰) · map/city · legend · HUD
-##   right        Inspector (with relations) · Search results
+##   top bar      app · Explorer toggle · repository · 2D|3D · preset ·
+##                search (dropdown: files, folders, symbols, > commands) · settings
+##   left         Explorer: the file tree (optional)
+##   viewport     islands: breadcrumb · camera · display ☰; map/city; legend; HUD
+##   right        tabs: Inspector (with relations) · View (lenses, relations)
 ##   status bar   server · progress · hover · keymap hints · fps
+##
+## Every control has one home: display toggles in ☰, viewing modes in View,
+## camera commands in Camera, tunables in Settings (docs/PLAN.md, UI map).
 ##
 ## The pieces live in scripts/ui/; scripted runs live in TestDriver.
 ##
@@ -26,7 +30,7 @@ const COMMANDS := [
 	["frame_all", "Frame all", "A"], ["frame_selected", "Frame selection", "F"],
 	["deselect", "Deselect", "Q"], ["select_parent", "Select parent", "Backspace"],
 	["toggle_view", "Switch 2D / 3D", "Tab"], ["toggle_imports", "Toggle import arcs", ""],
-	["toggle_calls", "Toggle call arcs", ""], ["toggle_display_panel", "Toggle display panel", ""],
+	["toggle_calls", "Toggle call arcs", ""], ["toggle_explorer", "Toggle Explorer", ""],
 	["toggle_hud", "Toggle diagnostics overlay", "F12"], ["open_folder", "Open folder…", ""],
 	["settings", "Settings", "Ctrl+,"], ["theme:calm", "Theme: Calm", ""], ["theme:fui", "Theme: FUI", ""],
 	["keymap:maya", "Keymap: Maya", ""], ["keymap:classic", "Keymap: Classic", ""],
@@ -37,12 +41,13 @@ var client: ScrapClient
 var map: MapView
 var city: CityView
 var toolbar: Toolbar
-var display: DisplayPanel
+var view_panel: ViewPanel
+var explorer: Explorer
 var header: ViewportHeader
 var legend: Legend
 var status: StatusBar
 var inspector: Inspector
-var search: SearchPanel
+var search: SearchPopup
 var settings_panel: SettingsPanel
 var hud: Hud
 var hello_info := {}
@@ -59,6 +64,8 @@ var _rel := {}               # op -> reply
 var _node_req := -1
 var _pending := {}           # what to do with the next node reply: {parent, select, fly}
 var _last_root := ""
+var _tree_sig := ""          # root + index pass: when it changes, node ids did
+var _selected_path := ""     # survives generations (ids do not)
 
 
 func _ready() -> void:
@@ -90,6 +97,7 @@ func _ready() -> void:
 	Style.theme_changed.connect(_apply_theme)
 	_apply_theme()
 	_apply_layout()
+	view_panel.set_3d(false)
 
 	if args.has("shot"):
 		add_child(TestDriver.new(self, args))
@@ -114,12 +122,10 @@ func _build_ui() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(body)
 
-	# left: display panel
-	display = DisplayPanel.new()
-	body.add_child(display)
-	display.lens_changed.connect(func(v):
-		client.request("options", {"view": v})
-		status.set_progress("applying view…"))
+	# left: explorer
+	explorer = Explorer.new(client)
+	body.add_child(explorer)
+	explorer.node_chosen.connect(func(id): select_and_frame(id, true))
 
 	var center := HSplitContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -139,7 +145,7 @@ func _build_ui() -> void:
 	views.add_child(city)
 
 	# viewport overlays; the map's tile levels use z up to 1000
-	header = ViewportHeader.new()
+	header = ViewportHeader.new(client)
 	header.z_index = 2000
 	header.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	header.offset_left = 10
@@ -171,7 +177,7 @@ func _build_ui() -> void:
 	settings_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	views.add_child(settings_panel)
 
-	# right: inspector + search results
+	# right: inspector + view
 	var side := PanelContainer.new()
 	side.custom_minimum_size = Vector2(320, 0)
 	center.add_child(side)
@@ -180,14 +186,21 @@ func _build_ui() -> void:
 	inspector = Inspector.new()
 	_tabs.add_child(inspector)
 	inspector.node_clicked.connect(func(id): select_and_frame(id, true))
-	search = SearchPanel.new(client)
-	_tabs.add_child(search)
+	view_panel = ViewPanel.new()
+	_tabs.add_child(view_panel)
+	view_panel.lens_changed.connect(func(v):
+		client.request("options", {"view": v})
+		status.set_progress("applying view…"))
+
+	# the search dropdown floats over everything, under the top bar field
+	search = SearchPopup.new(client)
+	search.z_index = 3000
+	add_child(search)
 	search.bind_field(toolbar.search_field)
 	for c in COMMANDS:
 		search.commands.append({"id": c[0], "label": c[1], "keys": c[2]})
-	toolbar.search_field.focus_entered.connect(show_search_tab)
 	search.hit_chosen.connect(_go_to_hit)
-	search.file_chosen.connect(select_and_frame)
+	search.path_chosen.connect(select_and_frame)
 	search.command_chosen.connect(_do_action)
 	search.results_changed.connect(func(files, lines):
 		map.set_search_results(files, lines)
@@ -220,12 +233,8 @@ func _apply_theme() -> void:
 
 ## Zone visibility from settings.
 func _apply_layout() -> void:
-	display.visible = Settings.get_value("ui.display_panel")
+	explorer.visible = Settings.get_value("ui.explorer")
 	header.visible = Settings.get_value("viewport.header")
-
-
-func show_search_tab() -> void:
-	_tabs.current_tab = search.get_index()
 
 
 # ---------------------------------------------------------------- views
@@ -236,6 +245,7 @@ func is_3d() -> bool:
 
 func set_view(three_d: bool) -> void:
 	toolbar.set_3d(three_d)
+	view_panel.set_3d(three_d)
 	if three_d == is_3d():
 		return
 	if three_d:
@@ -290,7 +300,6 @@ func _do_action(action: String) -> bool:
 		return true
 	match action:
 		"search":
-			show_search_tab()
 			search.focus()
 		"frame_all":
 			if is_3d():
@@ -316,6 +325,7 @@ func _do_action(action: String) -> bool:
 				settings_panel.hide()
 			else:
 				toolbar.search_field.text = ""
+				toolbar.search_field.text = ""
 				search.clear()
 		"settings":
 			settings_panel.toggle()
@@ -324,8 +334,8 @@ func _do_action(action: String) -> bool:
 		"toggle_imports", "toggle_calls":
 			var id := "relations." + action.substr(7)
 			Settings.set_value(id, not Settings.get_value(id))
-		"toggle_display_panel":
-			Settings.set_value("ui.display_panel", not Settings.get_value("ui.display_panel"))
+		"toggle_explorer":
+			Settings.set_value("ui.explorer", not Settings.get_value("ui.explorer"))
 		"open_folder":
 			_open_dialog.popup_centered_ratio(0.6)
 		_:
@@ -351,7 +361,7 @@ func _on_setting_changed(id: String, _v: Variant) -> void:
 		_refresh_relations()
 	elif id.begins_with("relations."):
 		_push_arcs()
-	elif id == "ui.display_panel" or id == "viewport.header":
+	elif id == "ui.explorer" or id == "viewport.header":
 		_apply_layout()
 	elif Settings.defs.get(id, {}).get("scope", "") == "server":
 		_send_server_settings()
@@ -368,18 +378,29 @@ func _on_connection(ok: bool) -> void:
 func _on_hello(info: Dictionary) -> void:
 	var regen: bool = hello_info.has("gen") and int(hello_info.gen) != int(info.gen)
 	hello_info = info
-	display.sync(info)
-	legend.set_view(info.get("legend", {}), display.color_lens())
+	view_panel.sync(info)
+	legend.set_view(info.get("legend", {}), view_panel.color_lens())
 	toolbar.set_repo(info.name, info.root)
 	header.set_repo(info.name)
 	if info.root != _last_root:
 		_last_root = info.root
 		Settings.add_recent(info.root)
-	if regen:
+	var s: Dictionary = info.stats
+	var sig := "%s|%s|%d|%d" % [info.root, info.precise, int(s.Files), int(s.Scopes)]
+	if sig != _tree_sig:
+		# a new tree (folder opened, precise pass): node ids changed
+		_tree_sig = sig
+		explorer.reload()
+		if _selected_path != "":
+			_pending = {"select": true, "fly": false}
+			_node_req = client.request("node", {"path": _selected_path})
+		elif _selected_id >= 0:
+			map.deselect()
+			city.deselect()
+	elif regen:
 		_refresh_relations()  # geometry may have moved with the new view
 		if _selected_id >= 0:
 			_node_req = client.request("node", {"node": _selected_id})  # fresh rect for the highlight
-	var s: Dictionary = info.stats
 	var pass_name := "precise" if info.precise else "fast"
 	status.set_progress("%s · %s files · %s lines · %s pass" % [info.name, Fmt.num(s.Files), Fmt.num(s.Lines), pass_name])
 	if int(info.get("protocol", 0)) != ScrapClient.PROTOCOL:
@@ -417,7 +438,8 @@ func _on_selected(id: int) -> void:
 	if id < 0:
 		_shown_node = -1
 		inspector.clear_node()
-		header.set_path("", [])
+		header.set_path("", -1, [])
+		_selected_path = ""
 		map.deselect()   # both return early when already clear
 		city.deselect()
 	elif id != _shown_node:
@@ -463,9 +485,11 @@ func _on_node(data: Dictionary) -> void:
 	map.set_selection(nid, data.rect)
 	city.set_selection(data.rect, float(data.top), kind)
 	inspector.show_node(data)
-	header.set_path(String(data.name), data.get("ancestors", []))
-	if _tabs.current_tab != search.get_index() or search.query == "":
-		_tabs.current_tab = inspector.get_index()
+	var anc: Array = data.get("ancestors", [])
+	header.set_path(String(data.name), nid, anc)
+	explorer.reveal(anc.map(func(a): return int(a[0])) + [nid])
+	_selected_path = String(data.path)  # a scope's path is its file's
+
 
 
 # ---------------------------------------------------------------- relations

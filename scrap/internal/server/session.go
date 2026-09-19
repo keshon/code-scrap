@@ -201,7 +201,11 @@ func (ss *session) handle(req request) {
 		}
 	case "node":
 		if st != nil {
-			resp = nodeInfo(st, req.Node)
+			id := req.Node
+			if req.Path != "" {
+				id = st.m.Lookup(req.Path) // node ids change between generations; paths do not
+			}
+			resp = nodeInfo(st, id)
 		}
 	case "pick":
 		if st != nil {
@@ -233,6 +237,10 @@ func (ss *session) handle(req request) {
 				hs[i] = st.m.HeightAt(p[0], p[1])
 			}
 			resp = map[string]any{"op": "heights", "h": hs}
+		}
+	case "children":
+		if st != nil {
+			resp = children(st, req.Node)
 		}
 	case "search":
 		if st != nil {

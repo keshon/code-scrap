@@ -1,7 +1,7 @@
 class_name Toolbar
 extends PanelContainer
-## Top bar: app, repository (open, recent), 2D/3D, preset, the search and
-## command field, settings. Viewing modes live in the Display panel.
+## Top bar: app-level things only. Explorer toggle, repository (open,
+## recent), 2D/3D, preset, the one search/command field, settings.
 
 signal action(name: String)             # keymap-style actions: frame_all, settings, …
 signal open_folder
@@ -28,6 +28,14 @@ func _ready() -> void:
 	title.text = "code-scrap"
 	hb.add_child(title)
 	hb.add_child(VSeparator.new())
+	var tree_btn := _icon_button("sidebar", "Explorer: the file tree", func(): pass)
+	tree_btn.toggle_mode = true
+	tree_btn.button_pressed = Settings.get_value("ui.explorer")
+	tree_btn.toggled.connect(func(on): Settings.set_value("ui.explorer", on))
+	Settings.changed.connect(func(id, v):
+		if id == "ui.explorer":
+			tree_btn.set_pressed_no_signal(v))
+	hb.add_child(tree_btn)
 
 	_repo_btn = MenuButton.new()
 	_repo_btn.flat = false
@@ -67,8 +75,8 @@ func _ready() -> void:
 	Settings.reloaded.connect(_fill_presets)
 
 	search_field = LineEdit.new()
-	search_field.placeholder_text = "Search symbols · > for commands"
-	search_field.tooltip_text = "Type a symbol prefix; Enter steps through hits, Shift+Enter back.\nStart with > to run a command.  ( / or Ctrl+K )"
+	search_field.placeholder_text = "Go to file, folder or symbol   ·   > command"
+	search_field.tooltip_text = "Files and folders by path, symbols by name prefix. Start with > for commands. ( / or Ctrl+K )"
 	search_field.clear_button_enabled = true
 	search_field.right_icon = Style.icon("search")
 	search_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL

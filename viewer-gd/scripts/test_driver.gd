@@ -5,7 +5,8 @@ extends Node
 ##
 ##   --shot=<png>      save a screenshot after --wait seconds, then quit
 ##   --wait=<sec>      (default 4)
-##   --search=<q>      run a search once connected and step to the first hit
+##   --search=<q>      run a search once connected and go to the first symbol hit
+##   --type=<q>        type into the search field and leave the dropdown open
 ##   --focus=1         fly to the first search hit's file instead of the line
 ##   --nofly           select search hits without flying to them
 ##   --view=3d         switch to the 3D city once connected (--yaw, --pitch, --dist, --home, --wheel=N)
@@ -33,8 +34,12 @@ func _ready() -> void:
 		shell.search.auto_step_first = true
 		client.hello.connect(func(_i):
 			if shell.search.query == "":
-				shell.show_search_tab()
 				shell.search.search(args.search), CONNECT_ONE_SHOT)
+	if args.has("type"):
+		# type into the search field and leave the dropdown open
+		client.hello.connect(func(_i):
+			shell.search.focus()
+			shell.search.search(args.type), CONNECT_ONE_SHOT)
 	if args.get("view", "") == "3d":
 		client.hello.connect(func(_i): _enter_3d(), CONNECT_ONE_SHOT)
 	if args.has("lens"):
