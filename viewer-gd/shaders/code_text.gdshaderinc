@@ -17,6 +17,8 @@ uniform sampler2D atlas_tex : filter_linear_mipmap_anisotropic, repeat_disable;
 global uniform float scrap_glyph_from;
 global uniform float scrap_glyph_full;
 global uniform float scrap_text_weight;
+global uniform float scrap_text_mode;   // 0 auto, 1 syntax, 2 mono
+global uniform vec4 scrap_text_mono;
 uniform float rows = 1.0;
 uniform float col_chars = 100.0;
 uniform float tex_w = 128.0;
@@ -54,5 +56,9 @@ vec4 code_text(vec2 uv) {
 			glyph = vec4(c.rgb, 1.0) * cov;
 		}
 	}
-	return mix(dash, glyph, t) * fade;
+	vec4 c = mix(dash, glyph, t);
+	// mono: one calm tone; auto: mono while it is dashes, syntax once readable
+	float mono = scrap_text_mode > 1.5 ? 1.0 : (scrap_text_mode < 0.5 ? 1.0 - t : 0.0);
+	c.rgb = mix(c.rgb, scrap_text_mono.rgb * c.a, mono);
+	return c * fade;
 }

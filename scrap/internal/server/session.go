@@ -52,6 +52,7 @@ type request struct {
 	View  *codemap.View `json:"view"`  // for "options"
 	// also for "options": viewer settings that shape the served map
 	Weights  map[string]float64 `json:"weights"`
+	Rules    *string            `json:"rules"` // importance rules: "glob = weight; …"
 	GitSince *string            `json:"gitSince"`
 	Node     int32              `json:"node"`
 	X        float64            `json:"x"`
@@ -215,8 +216,16 @@ func (ss *session) handle(req request) {
 		if req.View != nil {
 			go ss.srv.SetView(*req.View)
 		}
-		if req.Weights != nil {
-			go ss.srv.SetWeights(req.Weights)
+		if req.Weights != nil || req.Rules != nil {
+			rules := ""
+			if req.Rules != nil {
+				rules = *req.Rules
+			}
+			go func() {
+				if err := ss.srv.SetImportance(req.Weights, rules); err != nil {
+					ss.writeJSON(map[string]any{"op": "error", "id": req.ID, "error": err.Error()})
+				}
+			}()
 		}
 		if req.GitSince != nil {
 			ss.srv.SetGitSince(*req.GitSince)

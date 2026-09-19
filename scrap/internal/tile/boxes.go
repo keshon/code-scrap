@@ -30,7 +30,8 @@ func (k Key) Scale() float64 { return Px * math.Exp2(float64(k.Z)) }
 // Label is a text label placed in tile-local units (0..1 spans the tile).
 type Label struct {
 	ID         int32
-	Kind       uint8 // 0 dir, 1 file, 2 scope
+	Kind       uint8    // 0 dir, 1 file, 2 scope; a scope's kind (syntax.ScopeKind) in the high nibble
+	Color      [3]uint8 // the box's outline color
 	X, Y, W, H float32
 	Top        float32 // 3D: roof height of the labelled box
 	Text       string
@@ -98,10 +99,11 @@ func BoxTile(m *codemap.Map, k Key, is3D bool) *Boxes {
 
 func (b *Boxes) add(m *codemap.Map, id int32, r, tr codemap.Rect, scale float64) {
 	n := &m.Nodes[id]
-	b.push(r, tr, BoxColor(m, n), float32(n.Kind), float32(n.Depth), n.Top, id)
+	c := BoxColor(m, n)
+	b.push(r, tr, c, float32(n.Kind), float32(n.Depth), n.Top, id)
 	if r.Min()*scale >= minLabelPx {
 		h := codemap.Header(r)
-		b.label(id, uint8(n.Kind), h, n.Top, tr, n.Name)
+		b.label(id, uint8(n.Kind), c, h, n.Top, tr, n.Name)
 	}
 }
 
@@ -116,10 +118,11 @@ func (b *Boxes) addScope(m *codemap.Map, sid int32, f *codemap.File, tr codemap.
 		if !seg.Intersects(tr) || seg.H*scale < minBoxPx {
 			continue
 		}
-		b.push(seg, tr, col, 2, float32(s.Depth), s.Top, sid)
+		// scopes: kind 2 + scope kind / 10, depth = nesting inside the file
+		b.push(seg, tr, col, 2+float32(s.Scope)*0.1, float32(depthInFile), s.Top, sid)
 		if i == 0 && f.LH*scale >= 6 && seg.H*scale >= 3*f.LH*scale {
 			lh := codemap.Rect{X: seg.X + f.CW, Y: seg.Y - 0.55*f.LH, W: seg.W - f.CW, H: 0.9 * f.LH}
-			b.label(sid, 2, lh, s.Top, tr, s.Name)
+			b.label(sid, 2|uint8(s.Scope)<<4, col, lh, s.Top, tr, s.Name)
 		}
 	}
 }
@@ -165,10 +168,10 @@ func (b *Boxes) push(r, tr codemap.Rect, c [4]float32, kind, depth float32, top 
 	b.IDs = append(b.IDs, id)
 }
 
-func (b *Boxes) label(id int32, kind uint8, r codemap.Rect, top float64, tr codemap.Rect, text string) {
+func (b *Boxes) label(id int32, kind uint8, c [4]float32, r codemap.Rect, top float64, tr codemap.Rect, text string) {
 	inv := 1 / tr.W
 	b.Labels = append(b.Labels, Label{
-		ID: id, Kind: kind, Text: text, Top: float32(top * inv),
+		ID: id, Kind: kind, Text: text, Color: [3]uint8{uint8(c[0] * 255), uint8(c[1] * 255), uint8(c[2] * 255)}, Top: float32(top * inv),
 		X: float32((r.X - tr.X) * inv), Y: float32((r.Y - tr.Y) * inv),
 		W: float32(r.W * inv), H: float32(r.H * inv),
 	})

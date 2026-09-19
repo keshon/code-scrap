@@ -16,6 +16,9 @@ type View struct {
 	// Weights overrides importance factors by class name (see ImportanceClasses);
 	// classes it leaves out keep their default.
 	Weights map[string]float64 `json:"weights,omitempty"`
+	// Rules give matching paths their own weight, over the class weights;
+	// the last matching rule wins (repo rules come after the user's).
+	Rules []Rule `json:"rules,omitempty"`
 }
 
 // Height modes besides the metrics.
@@ -65,6 +68,17 @@ func importanceFactor(c FileClass, weights map[string]float64) float64 {
 		}
 	}
 	return f
+}
+
+// importance is a file's area factor: the last matching rule, else its
+// class weight.
+func (m *Map) importance(f *File) float64 {
+	for i := len(m.View.Rules) - 1; i >= 0; i-- {
+		if m.View.Rules[i].Match(f.Path) {
+			return max(m.View.Rules[i].Weight, 0.001)
+		}
+	}
+	return importanceFactor(f.Class, m.View.Weights)
 }
 
 // metric returns a file's raw metric value (0 when unknown).
@@ -151,7 +165,7 @@ func (m *Map) reweigh() {
 		case KindFile:
 			n.Weight = n.BaseWeight
 			if m.View.Importance {
-				n.Weight *= importanceFactor(m.Files[n.File].Class, m.View.Weights)
+				n.Weight *= m.importance(&m.Files[n.File])
 			}
 		case KindDir:
 			n.Weight = 0

@@ -12,6 +12,9 @@ var _legend := {}       # hello.legend
 var _lens := {}         # active color lens descriptor
 var _rel := {}          # {imports: bool, calls: bool} with arcs on screen
 var _search := false
+var _height := {}       # active height lens descriptor (3D)
+var _is3d := false
+var _collapsed := false
 
 
 func _ready() -> void:
@@ -26,9 +29,15 @@ func _ready() -> void:
 	Style.theme_changed.connect(_rebuild)
 
 
-func set_view(legend: Dictionary, lens: Dictionary) -> void:
+func set_view(legend: Dictionary, lens: Dictionary, height := {}) -> void:
 	_legend = legend
 	_lens = lens
+	_height = height
+	_rebuild()
+
+
+func set_3d(on: bool) -> void:
+	_is3d = on
 	_rebuild()
 
 
@@ -49,11 +58,33 @@ func _rebuild() -> void:
 	for c in _box.get_children():
 		c.queue_free()
 	visible = Settings.get_value("viewport.legend")
-	_box.add_child(_title(_lens.get("long", "Top-level area")))
+	var head := HBoxContainer.new()
+	var t := _title(_lens.get("long", "Top-level area") if not _collapsed else "Legend")
+	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(t)
+	var fold := Button.new()
+	fold.theme_type_variation = "FlatButton"
+	fold.focus_mode = Control.FOCUS_NONE
+	fold.icon = Style.icon("chevron")
+	fold.tooltip_text = "Show the legend" if _collapsed else "Collapse the legend"
+	fold.pressed.connect(func():
+		_collapsed = not _collapsed
+		_rebuild())
+	head.add_child(fold)
+	_box.add_child(head)
+	if _collapsed:
+		return
 	if _legend.get("kind", "") == "metric":
 		_metric()
 	else:
 		_areas()
+	if _is3d and not _height.is_empty():
+		_box.add_child(HSeparator.new())
+		_box.add_child(_title("Height · " + str(_height.get("short", ""))))
+		var d := _small(str(_height.get("long", "")) + ("" if _height.get("unit", "") == "" else ": taller = more " + str(_height.unit)))
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d.custom_minimum_size = Vector2(200, 0)
+		_box.add_child(d)
 	var arcs: bool = Settings.get_value("viewport.arcs")
 	if arcs and (_rel.get("imports", false) or _rel.get("calls", false)):
 		_box.add_child(HSeparator.new())
@@ -64,8 +95,11 @@ func _rebuild() -> void:
 		if _rel.get("calls", false):
 			_box.add_child(_swatch(Settings.get_value("relations.calls_out"), "calls", true))
 			_box.add_child(_swatch(Settings.get_value("relations.calls_in"), "called by", true))
+	_box.add_child(HSeparator.new())
+	_box.add_child(_swatch(Settings.get_value("highlight.selection"), "selection", true))
+	if Settings.get_value("viewport.hover"):
+		_box.add_child(_swatch(Settings.get_value("highlight.hover"), "under the cursor", true))
 	if _search and Settings.get_value("viewport.search_hits"):
-		_box.add_child(HSeparator.new())
 		_box.add_child(_swatch(Settings.get_value("highlight.search"), "search hits"))
 
 
@@ -121,6 +155,7 @@ func _areas() -> void:
 	if more > 0:
 		_box.add_child(_small("+%d more" % more))
 	_box.add_child(_swatch(Color(0.50, 0.52, 0.56), "binary / data (muted)"))
+	_box.add_child(_swatch(Color(0.52, 0.60, 0.58), "vendored / generated (dimmed)"))
 
 
 func _title(t: String) -> Label:

@@ -35,6 +35,7 @@ var _tiles_root: Node2D
 var _overlay: Control
 var _quad: ArrayMesh
 var _box_mat: ShaderMaterial
+var _grid: ColorRect
 var _level := -1
 
 # diagnostics (HUD)
@@ -82,6 +83,7 @@ class TileRec:
 	var label_kinds: PackedByteArray
 	var label_rects: PackedFloat64Array  # world x,y,w,h per label
 	var label_texts: PackedStringArray
+	var label_colors: PackedColorArray
 	var blocks: Array  # text blocks in world units: {file, col, seg, rows, x, y, w, h}
 
 
@@ -96,6 +98,13 @@ func _ready() -> void:
 	Settings.changed.connect(func(_id, _v): _dirty = true)
 	Settings.reloaded.connect(func(): _dirty = true)
 
+	_grid = ColorRect.new()
+	_grid.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_grid.z_index = -1
+	_grid.material = ShaderMaterial.new()
+	(_grid.material as ShaderMaterial).shader = load("res://shaders/grid2d.gdshader")
+	add_child(_grid)
 	_tiles_root = Node2D.new()
 	add_child(_tiles_root)
 	_overlay = Control.new()
@@ -339,6 +348,21 @@ func _update_tiles() -> void:
 	if _tiles.size() > int(Settings.get_value("perf.tile_cache")):
 		_evict()
 	_update_text()
+	_update_grid()
+
+
+## Dots every 2^k world units, the level picked so they sit 20–40 px apart.
+func _update_grid() -> void:
+	_grid.visible = Settings.get_value("viewport.grid")
+	if not _grid.visible:
+		return
+	var f := get_window().content_scale_factor
+	var k: float = floor(log(28.0 / zoom) / log(2.0))
+	var spacing := pow(2.0, k) * zoom * f
+	var m := _grid.material as ShaderMaterial
+	m.set_shader_parameter("spacing", spacing)
+	m.set_shader_parameter("origin", (world_to_screen(0.0, 0.0) + get_global_rect().position) * f)
+	m.set_shader_parameter("dot_color", Color(Style.color("text3"), 0.22))
 
 
 ## Text blocks listed by the visible tiles, biggest text first.
@@ -424,6 +448,7 @@ func _on_tile(t: Dictionary) -> void:
 		rec.label_kinds.append(l.kind)
 		rec.label_rects.append_array([ox + r.position.x * ts, oy + r.position.y * ts, r.size.x * ts, r.size.y * ts])
 		rec.label_texts.append(l.text)
+		rec.label_colors.append(l.color)
 	rec.node = node
 	node.visible = false
 	_tiles_root.add_child(node)
@@ -615,7 +640,8 @@ func _draw_overlay() -> void:
 	if Settings.get_value("viewport.labels"):
 		_draw_labels()
 	# hover + selection
-	if hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover"):
+	# on the flat map "outline" and "xray" look the same: nothing stands in front
+	if hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover") 			and Settings.get_value("highlight.hover_style") != "off":
 		var hr := rect_to_screen(hover.rect)
 		o.draw_rect(hr, Color(hover_c, 0.06))
 		_outline(hr, Color(hover_c, 0.7), Settings.get_value("lines.hover_width"))
@@ -623,8 +649,11 @@ func _draw_overlay() -> void:
 			o.draw_rect(rect_to_screen(hover.lineRect), Color(hover_c, 0.12))
 	if selection_rect.size() == 4:
 		var sr := rect_to_screen(selection_rect)
-		o.draw_rect(sr, Color(sel_c, 0.16))
-		_outline(sr, sel_c, Settings.get_value("lines.selected_width"))
+		var fill: float = Settings.get_value("highlight.fill")
+		if fill > 0.0:
+			o.draw_rect(sr, Color(sel_c, fill * 0.6))
+		if Settings.get_value("highlight.style") != "off":
+			_outline(sr, sel_c, Settings.get_value("lines.selected_width"))
 
 
 func _draw_labels() -> void:
@@ -653,10 +682,18 @@ func _draw_labels() -> void:
 				continue
 			if not view.intersects(r):
 				continue
-			cand.append({"prio": r.size.x, "text": rec.label_texts[i], "max_w": r.size.x - 8.0,
-				"pos": Vector2(max(r.position.x, 0.0) + 2.0, max(r.position.y, 0.0) + 1.0),
-				"size": clampi(int(r.size.y * 0.85), 8, fs) if kind == 2 else fs})
-	ViewCommon.draw_labels(o, _label_font, cand, Settings.get_value("labels.max"))
+			var c := {"prio": r.size.x, "kind": kind, "color": rec.label_colors[i], "text": rec.label_texts[i],
+				"max_w": r.size.x - 8.0, "size": fs}
+			if kind == 2:
+				# a legend sitting on the scope's top border
+				c.size = clampi(int(r.size.y * 0.85), 8, fs)
+				c.pos = r.position
+			else:
+				c.pos = Vector2(max(r.position.x, 0.0) + 2.0, max(r.position.y, 0.0) + 1.0)
+				if kind == 1:
+					c.size = max(fs - 1, 8)
+			cand.append(c)
+	ViewCommon.draw_labels(o, ViewCommon.place_labels(cand, Settings.get_value("labels.max")))
 
 
 # ---------------------------------------------------------------- relations
@@ -666,41 +703,73 @@ func set_arcs(list: Array) -> void:
 	_overlay.queue_redraw()
 
 
+## Arcs as quadratic curves. Endpoints smaller on screen than
+## relations.group_px snap to a grid, so arcs between the same small
+## neighbourhoods merge into one thicker arc instead of a blended tangle.
 func _draw_arcs() -> void:
 	if arcs.is_empty():
 		return
 	var o := _overlay
 	var view := Rect2(Vector2.ZERO, size).grow(200)
 	var top_a: float = Settings.get_value("relations.opacity")
-	var alpha: float = clamp(60.0 / arcs.size(), top_a * 0.2, top_a)
 	var width: float = Settings.get_value("relations.width")
+	var group: float = Settings.get_value("relations.group_px")
+	var bend: float = Settings.get_value("relations.arc_height") * 0.5
+	var arrows: bool = Settings.get_value("relations.arrows")
+	var bundles := {}
 	for arc in arcs:
-		var a := rect_to_screen(arc.a).get_center()
-		var b := rect_to_screen(arc.b).get_center()
+		var ra := rect_to_screen(arc.a)
+		var rb := rect_to_screen(arc.b)
+		var a := ra.get_center()
+		var b := rb.get_center()
 		if not view.has_point(a) and not view.has_point(b):
 			continue
+		var ka: Variant = _group_key(a, ra, group)
+		var kb: Variant = _group_key(b, rb, group)
+		var key := [ka, kb, arc.color]
+		if bundles.has(key):
+			bundles[key].n += 1
+		else:
+			bundles[key] = {"a": ka if ka is Vector2 else a, "b": kb if kb is Vector2 else b, "c": arc.color, "n": 1}
+	var alpha: float = clamp(60.0 / max(bundles.size(), 1), top_a * 0.2, top_a)
+	for bd in bundles.values():
+		var a: Vector2 = bd.a
+		var b: Vector2 = bd.b
 		var d := b - a
 		var len := d.length()
 		if len < 2.0:
 			continue
 		# bend every arc the same way, so in- and outgoing pairs separate
-		var ctrl: Vector2 = (a + b) * 0.5 + Vector2(-d.y, d.x) / len * min(len * 0.22, 220.0)
+		var ctrl: Vector2 = (a + b) * 0.5 + Vector2(-d.y, d.x) / len * min(len * bend, 220.0)
 		var pts := PackedVector2Array()
 		for i in 21:
 			var t := i / 20.0
 			pts.append(a.lerp(ctrl, t).lerp(ctrl.lerp(b, t), t))
-		var c: Color = arc.color
-		o.draw_polyline(pts, Color(c, alpha), width, true)
-		# arrowhead at the imported/called end
-		var tip := pts[20]
-		var back := tip - pts[17]
-		if back.length() > 0.5:
-			var dir := back.normalized()
-			var side := Vector2(-dir.y, dir.x)
-			var ac := Color(c, min(alpha * 1.5, 1.0))
-			o.draw_primitive(PackedVector2Array([tip, tip - dir * 8.0 + side * 3.5, tip - dir * 8.0 - side * 3.5]),
-				PackedColorArray([ac, ac, ac]), PackedVector2Array())
-		o.draw_circle(pts[0], 2.0, Color(c, alpha))
+		var c: Color = bd.c
+		var w: float = width * (1.0 + log(float(bd.n)) / log(2.0) * 0.6)
+		var ca := Color(c, min(alpha * (1.0 + 0.15 * (bd.n - 1)), top_a))
+		o.draw_polyline(pts, ca, w, true)
+		if arrows:
+			# arrowhead at the imported/called end
+			var tip := pts[20]
+			var back := tip - pts[17]
+			if back.length() > 0.5:
+				var dir := back.normalized()
+				var side := Vector2(-dir.y, dir.x)
+				var ac := Color(c, min(ca.a * 1.5, 1.0))
+				var s := 6.0 + w * 1.5
+				o.draw_primitive(PackedVector2Array([tip, tip - dir * s + side * s * 0.45, tip - dir * s - side * s * 0.45]),
+					PackedColorArray([ac, ac, ac]), PackedVector2Array())
+		o.draw_circle(pts[0], 1.5 + w * 0.5, ca)
+
+
+## An endpoint's bundling key: its snapped cell centre when the box is
+## small on screen, else null (drawn on its own).
+func _group_key(p: Vector2, r: Rect2, group: float) -> Variant:
+	if group <= 0.0 or max(r.size.x, r.size.y) >= group:
+		return null
+	var cell := group * 2.0
+	return ((p / cell).floor() + Vector2(0.5, 0.5)) * cell
 
 
 # ---------------------------------------------------------------- search

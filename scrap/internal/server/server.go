@@ -53,7 +53,10 @@ type Server struct {
 	indexing context.CancelFunc
 	indexCtx context.Context    // lives as long as the current root
 	gitStop  context.CancelFunc // cancels the running git read
-	progress atomic.Value       // last progress message (map[string]any)
+
+	userRules string         // importance rules as the viewer sent them
+	repoRules []codemap.Rule // from the open repo's .scrap.json
+	progress  atomic.Value   // last progress message (map[string]any)
 }
 
 // New creates a server; call Open to index a root. fontPath selects the
@@ -86,6 +89,9 @@ func (s *Server) Open(root string) error {
 	s.indexing = cancel
 	s.indexCtx = ctx
 	s.root = root
+	user, _ := codemap.ParseRules(s.userRules)
+	s.repoRules = codemap.RepoRules(root)
+	s.view.Rules = append(user, s.repoRules...)
 	s.mu.Unlock()
 
 	fast := s.Options
@@ -156,16 +162,21 @@ func (s *Server) SetGitSince(since string) {
 	}
 }
 
-// SetWeights changes the importance factors (by class name).
-func (s *Server) SetWeights(w map[string]float64) {
+// SetImportance changes the importance weights (by class name) and the
+// user's rules ("glob = weight; …"); the open repo's .scrap.json rules are
+// applied after them.
+func (s *Server) SetImportance(w map[string]float64, rules string) error {
+	user, err := codemap.ParseRules(rules)
 	s.mu.Lock()
-	changed := !maps.Equal(w, s.view.Weights)
-	s.view.Weights = w
+	all := append(user, s.repoRules...)
+	changed := !maps.Equal(w, s.view.Weights) || rules != s.userRules
+	s.view.Weights, s.view.Rules, s.userRules = w, all, rules
 	importance := s.view.Importance
 	s.mu.Unlock()
 	if changed && importance {
 		s.rebuild()
 	}
+	return err
 }
 
 // readGit loads per-file history in the background; git-based metrics light
@@ -204,7 +215,10 @@ func (s *Server) setBase(m *codemap.Map, precise bool) {
 func (s *Server) SetView(v codemap.View) {
 	s.mu.Lock()
 	if v.Weights == nil {
-		v.Weights = s.view.Weights // weights come from settings, not the lens pickers
+		v.Weights = s.view.Weights // weights and rules come from settings, not the lens pickers
+	}
+	if v.Rules == nil {
+		v.Rules = s.view.Rules
 	}
 	s.view = v
 	s.mu.Unlock()

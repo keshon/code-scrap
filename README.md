@@ -86,6 +86,14 @@ Every control has one home ([docs/PLAN.md](docs/PLAN.md), "UI map").
 | Right pane | **Inspector** (with clickable imports / callers) · **View** (lenses, importance, relations) |
 | Status bar | server, index progress, hover, keymap hints, fps |
 
+### Importance rules
+
+Besides the per-class weights (View tab), rules give paths their own weight: `src/legacy/** = 0.3; **/*.stories.tsx = 0.2`. A repository can carry its own in `.scrap.json`:
+
+```json
+{"importance": {"rules": {"src/legacy/**": 0.3}}}
+```
+
 ### Lenses (View tab)
 
 Every lens is optional; the defaults show the plain map.

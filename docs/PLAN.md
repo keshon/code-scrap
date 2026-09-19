@@ -1,6 +1,6 @@
 # Polish plan
 
-Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1–3 done, theme A (Calm) first
+Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1–4 done, theme A (Calm) first
 
 This plan turns the prototype into a tool: a data-driven core, a real UI shell, and a viewport that reads well. It covers the 20 review points from 2026-09-19. The phases are ordered so that each one builds on the previous: first the foundations everything else plugs into, then fixes, then the shell, then viewport polish.
 
@@ -188,6 +188,22 @@ Done (2026-09-19). Protocol v4 adds `children` (tree and breadcrumb menus), path
 ---
 
 ## Phase 4 — Viewport polish (points 8–11, 13, 16, 18)
+
+> **Done (2026-09-19).**
+> - **Highlights:** selection and hover styles (outline, depth tested / x-ray / off) plus roof fill opacity; 3D labels are depth-tested `Label3D`s, with "Labels through buildings" in ☰.
+> - **Scopes:** scope outlines are styled by kind (rounded solid functions, dashed classes, types and namespaces), fade with nesting, and are tunable.
+> - **Labels:** folders get hue tabs, files an extension chip, scopes a legend cut into their border; priority is dir > file > scope, with a spacing setting.
+> - **Legend:** now also shows the height lens in 3D, selection and hover colors and the dimmed classes, and can collapse.
+> - **Arcs:** direction, most arcs, height, arrowheads, through-buildings, and screen-space grouping of small endpoints (thicker arcs by count).
+> - **Importance:** glob rules (`glob = weight; …`) plus a repo-local `.scrap.json`.
+> - **Look:** mono / auto / syntax roof text, roof lift, bevels, a directional light (direction, height, strength) or flat, contact shading, dotted ground grid with a horizon glow, and a reading assist.
+> - **Deferred to Phase 5:**
+>   - hover tooltips on arcs;
+>   - folder names on plinth walls (3D labels are billboards at the roof edge);
+>   - focus + context dimming;
+>   - palette presets;
+>   - SSAO (the look stays unshaded and tunable);
+>   - hierarchical edge bundling.
 
 ### 4.1 Selection and hover styles (point 8), in the ☰ menu and settings
 - **Style:** outline only (default) · outline + roof tint · x-ray outline (through geometry) · off.

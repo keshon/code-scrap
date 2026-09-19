@@ -273,3 +273,31 @@ func TestLookup(t *testing.T) {
 		t.Error("Lookup by path failed")
 	}
 }
+
+func TestImportanceRules(t *testing.T) {
+	rules, err := ParseRules("src/**/*.test.ts = 0.9; vendor/** = 1; **/e.ts=0.2")
+	if err != nil || len(rules) != 3 {
+		t.Fatalf("ParseRules: %v %v", rules, err)
+	}
+	for _, c := range []struct {
+		i    int
+		p    string
+		want bool
+	}{
+		{0, "src/b.test.ts", true}, {0, "src/deep/x.test.ts", true}, {0, "b.test.ts", false},
+		{1, "vendor/lib.js", true}, {2, "src/deep/c/d/e.ts", true}, {2, "e.ts", true}, {2, "src/e.tsx", false},
+	} {
+		if rules[c.i].Match(c.p) != c.want {
+			t.Errorf("%s ~ %s: want %v", rules[c.i].Glob, c.p, c.want)
+		}
+	}
+	m := fixture(t, false)
+	test := fileByPath(t, m, "src/b.test.ts").Node
+	area := func(v View) float64 { r := m.WithView(v).Nodes[test].Rect; return r.W * r.H }
+	if !(area(View{Importance: true, Rules: rules}) > area(View{Importance: true})) {
+		t.Error("a rule weight of 0.9 should give the test file more room than the class weight")
+	}
+	if _, err := ParseRules("nonsense"); err == nil {
+		t.Error("want an error for a rule without =")
+	}
+}

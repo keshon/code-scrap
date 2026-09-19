@@ -15,6 +15,7 @@ extends Node
 ##   --settings=1      open the settings panel
 ##   --hud=1           show the diagnostics overlay
 ##   --theme=<id>      use this theme for the run (nothing is saved)
+##   --set=id:value,…  override settings for the run (nothing is saved)
 
 var shell: Node   # main.gd
 var args := {}
@@ -30,6 +31,20 @@ func _ready() -> void:
 	var client: ScrapClient = shell.client
 	if args.has("theme"):
 		Settings.set_value("ui.theme", args.theme)
+	if args.has("set"):
+		for kv in String(args.set).split(","):
+			var id := kv.get_slice(":", 0)
+			var raw := kv.substr(id.length() + 1)
+			var def: Dictionary = Settings.defs.get(id, {})
+			match def.get("type", ""):
+				"bool":
+					Settings.set_value(id, raw == "true" or raw == "1")
+				"int", "float":
+					Settings.set_value(id, float(raw))
+				"color":
+					Settings.set_value(id, Color.html(raw))
+				_:
+					Settings.set_value(id, raw)
 	if args.has("search"):
 		shell.search.auto_step_first = true
 		client.hello.connect(func(_i):
@@ -65,7 +80,7 @@ func _apply_lens(spec: String) -> void:
 		if shell.hello_info.get("git", false):
 			break
 		await get_tree().create_timer(0.1).timeout
-	shell.display.apply_lens_spec(spec)
+	shell.view_panel.apply_lens_spec(spec)
 
 
 func _enter_3d() -> void:

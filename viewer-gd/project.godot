@@ -51,6 +51,62 @@ scrap_depth_tone={
 "type": "float",
 "value": 0.3
 }
+scrap_scope_opacity={
+"type": "float",
+"value": 0.55
+}
+scrap_scope_radius={
+"type": "float",
+"value": 4.0
+}
+scrap_scope_dash={
+"type": "float",
+"value": 1.0
+}
+scrap_scope_fade={
+"type": "float",
+"value": 0.25
+}
+scrap_scope_funcs={
+"type": "float",
+"value": 1.0
+}
+scrap_scope_containers={
+"type": "float",
+"value": 1.0
+}
+scrap_text_mode={
+"type": "float",
+"value": 0.0
+}
+scrap_text_mono={
+"type": "color",
+"value": Color(0.322, 0.353, 0.392, 1)
+}
+scrap_roof_tone={
+"type": "float",
+"value": 0.06
+}
+scrap_bevel={
+"type": "float",
+"value": 0.06
+}
+scrap_light_dir={
+"type": "vec3",
+"value": Vector3(0.45, 0.8, 0.3)
+}
+scrap_light_strength={
+"type": "float",
+"value": 0.45
+}
+scrap_contact={
+"type": "float",
+"value": 0.45
+}
+scrap_flat={
+"type": "float",
+"value": 0.0
+}
 
 [rendering]
 

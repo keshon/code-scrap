@@ -56,7 +56,7 @@ func _ready() -> void:
 	_weights.folded = true
 	var wb := VBoxContainer.new()
 	_weights.add_child(wb)
-	for id in ["importance.vendored", "importance.test", "importance.minified", "importance.asset", "importance.data"]:
+	for id in ["importance.vendored", "importance.test", "importance.minified", "importance.asset", "importance.data", "importance.rules"]:
 		wb.add_child(SettingRow.new(id, true))
 	vb.add_child(_weights)
 	vb.add_child(SettingRow.new("git.since", true))
@@ -101,6 +101,11 @@ func current_view() -> Dictionary:
 		"color": _colors[max(_color_opt.selected, 0)].id,
 		"importance": _importance.button_pressed,
 	}
+
+
+## The active height lens descriptor.
+func height_lens() -> Dictionary:
+	return _heights[max(_height_opt.selected, 0)]
 
 
 ## The active color lens descriptor.

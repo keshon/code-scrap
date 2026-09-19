@@ -22,15 +22,31 @@ var theme: Theme
 var fonts := {}  # "plex-sans" -> {400: Font, 500: Font, 600: Font}
 
 
-# setting -> [shader global, scales with the interface]
-# Pixel sizes that scale are in physical pixels on the GPU.
+# setting -> [shader global, how to convert]
+#   "f" float · "px" pixels, scaled with the interface (physical on the GPU)
+#   "b" bool as 0/1 · "c" color · "e" enum as its option index
 const SHADER_GLOBALS := {
-	"text.glyph_from_px": ["scrap_glyph_from", false],
-	"text.glyph_full_px": ["scrap_glyph_full", false],
-	"text.weight": ["scrap_text_weight", false],
-	"lines.box_width": ["scrap_line_px", true],
-	"lines.min_box_px": ["scrap_line_min_box", true],
-	"lines.depth_tone": ["scrap_depth_tone", false],
+	"text.glyph_from_px": ["scrap_glyph_from", "f"],
+	"text.glyph_full_px": ["scrap_glyph_full", "f"],
+	"text.weight": ["scrap_text_weight", "f"],
+	"text.color_mode": ["scrap_text_mode", "e"],
+	"text.mono_tone": ["scrap_text_mono", "c"],
+	"text.roof_tone": ["scrap_roof_tone", "f"],
+	"lines.box_width": ["scrap_line_px", "px"],
+	"lines.min_box_px": ["scrap_line_min_box", "px"],
+	"lines.depth_tone": ["scrap_depth_tone", "f"],
+	"scopes.opacity": ["scrap_scope_opacity", "f"],
+	"scopes.radius": ["scrap_scope_radius", "px"],
+	"scopes.dash": ["scrap_scope_dash", "b"],
+	"scopes.nested_fade": ["scrap_scope_fade", "f"],
+	"scopes.functions": ["scrap_scope_funcs", "b"],
+	"scopes.containers": ["scrap_scope_containers", "b"],
+	"look.bevel": ["scrap_bevel", "f"],
+	"look.light_strength": ["scrap_light_strength", "f"],
+	"look.contact": ["scrap_contact", "f"],
+	"look.light": ["scrap_flat", "e"],   # 0 directional, 1 flat
+	"look.light_yaw": ["", "light"],
+	"look.light_pitch": ["", "light"],
 }
 
 
@@ -57,10 +73,24 @@ func _sync_shader_globals() -> void:
 	var f := get_tree().root.content_scale_factor
 	for id in SHADER_GLOBALS:
 		var g: Array = SHADER_GLOBALS[id]
-		var v := float(Settings.get_value(id))
-		if g[1]:
-			v *= f
-		RenderingServer.global_shader_parameter_set(g[0], v)
+		var v = Settings.get_value(id)
+		match g[1]:
+			"f":
+				RenderingServer.global_shader_parameter_set(g[0], float(v))
+			"px":
+				RenderingServer.global_shader_parameter_set(g[0], float(v) * f)
+			"b":
+				RenderingServer.global_shader_parameter_set(g[0], 1.0 if v else 0.0)
+			"c":
+				RenderingServer.global_shader_parameter_set(g[0], v)
+			"e":
+				var opts: Array = Settings.defs[id].get("options", [])
+				RenderingServer.global_shader_parameter_set(g[0], float(max(opts.find(v), 0)))
+	# the light direction, pointing toward the light
+	var yaw := deg_to_rad(float(Settings.get_value("look.light_yaw")))
+	var pitch := deg_to_rad(float(Settings.get_value("look.light_pitch")))
+	var d := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
+	RenderingServer.global_shader_parameter_set("scrap_light_dir", d)
 
 
 ## A width in UI pixels as whole physical pixels (at least one), for lines

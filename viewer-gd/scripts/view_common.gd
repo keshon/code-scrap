@@ -27,18 +27,26 @@ static func tile_fallback(tiles: Dictionary, key: Vector3i, shown: Dictionary) -
 			return
 
 
-## Draws label pills, most important first, skipping any that would overlap
-## one already placed. Each candidate: {prio, pos (top-left), max_w, text,
-## size}. Returns how many were drawn.
-static func draw_labels(o: CanvasItem, font: Font, cand: Array, budget: int) -> int:
-	cand.sort_custom(func(a, b): return a.prio > b.prio)
-	var pill_c := Color(Style.color("bg"), 0.86)
-	var text_c := Style.color("text")
-	var placed: Array[Rect2] = []
+## Label placement. Each candidate: {prio (on-screen size), kind (0 dir,
+## 1 file, 2 scope), color, pos (top-left), max_w, size, text}. Directories
+## win over files over scopes, then bigger boxes win; a label that would
+## overlap one already placed (plus the density gap) is dropped. Returns
+## [{c, text, rect, font}] in placement order.
+static func place_labels(cand: Array, budget: int) -> Array:
+	cand.sort_custom(func(a, b):
+		if a.kind != b.kind:
+			return a.kind < b.kind
+		return a.prio > b.prio)
+	var gap: float = Settings.get_value("labels.gap")
+	var bold := Style.font("ui", 600)
+	var regular := Style.font("ui", 500)
+	var placed := []
+	var rects: Array[Rect2] = []
 	for c in cand:
 		if placed.size() >= budget:
 			break
 		var fs: int = c.size
+		var font: Font = bold if c.kind == 0 else regular
 		var text: String = c.text
 		var max_w: float = c.max_w
 		var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
@@ -48,16 +56,52 @@ static func draw_labels(o: CanvasItem, font: Font, cand: Array, budget: int) -> 
 				continue
 			text = text.substr(0, keep) + "…"
 			tw = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var pos: Vector2 = c.pos
-		var pill := Rect2(pos, Vector2(tw + 6.0, fs + 4.0))
+		var pad := 14.0 if c.kind != 2 else 8.0   # dir stripe / file chip / scope gap
+		var r := Rect2(c.pos, Vector2(tw + pad, fs + 5.0))
 		var hit := false
-		for p in placed:
-			if p.intersects(pill):
+		for p in rects:
+			if p.grow(gap).intersects(r):
 				hit = true
 				break
 		if hit:
 			continue
-		placed.append(pill)
-		o.draw_rect(pill, pill_c)
-		o.draw_string(font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_c)
-	return placed.size()
+		rects.append(r)
+		placed.append({"c": c, "text": text, "rect": r, "font": font})
+	return placed
+
+
+## Draws placed labels in their kind's style:
+##   dir    a tab in the area's hue: tinted fill, bright stripe, bold name
+##   file   quiet: dark fill, extension chip, secondary text
+##   scope  a legend cut into the scope's border: knocked-out gap, hue text
+static func draw_labels(o: CanvasItem, placed: Array) -> void:
+	var bg := Style.color("bg")
+	var text2 := Style.color("text2")
+	for p in placed:
+		var c: Dictionary = p.c
+		var r: Rect2 = p.rect
+		var fs: int = c.size
+		var font: Font = p.font
+		var col: Color = c.get("color", text2)
+		var base := r.position + Vector2(0, fs * 0.95 + 1.5)
+		match int(c.kind):
+			0:
+				o.draw_rect(r, Color(bg.lerp(col, 0.28), 0.94))
+				o.draw_rect(Rect2(r.position, Vector2(3, r.size.y)), col)
+				o.draw_string(font, base + Vector2(8, 0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col.lerp(Color.WHITE, 0.55))
+			1:
+				o.draw_rect(r, Color(bg, 0.82))
+				var chip := Rect2(r.position + Vector2(4, r.size.y * 0.5 - 3), Vector2(6, 6))
+				o.draw_rect(chip, ext_color(c.text))
+				o.draw_string(font, base + Vector2(13, 0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text2)
+			_:
+				o.draw_rect(r, Color(bg, 0.9))
+				o.draw_string(font, base + Vector2(4, 0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+
+
+## A stable color per file extension (the chip on file labels).
+static func ext_color(name: String) -> Color:
+	var ext := name.get_extension().to_lower()
+	if ext == "":
+		return Color(0.5, 0.52, 0.56)
+	return Color.from_hsv(float(ext.hash() % 360) / 360.0, 0.5, 0.92)

@@ -48,11 +48,22 @@ var _dirty := true
 var _frame := 0
 var _last_request := ""
 var _label_font: Font
+var _sky_mat: ShaderMaterial
+var _ground: MeshInstance3D
+var _reading := 0.0          # 0..1: how readable the code under the target is (reading assist)
+var _reading_goal := 0.0
+var _labels_root: Node3D
+var _label_of := {}          # node id -> Label3D shown last frame
+var _label_free: Array[Label3D] = []
 var _text: TextLayer
 var _plane: ArrayMesh
 var _sel_xray: MeshInstance3D
 var _sel_fill: MeshInstance3D
 var _hov_xray: MeshInstance3D
+var _HL_SHADERS := {
+	"outline": preload("res://shaders/highlight_outline.gdshader"),
+	"xray": preload("res://shaders/highlight_xray.gdshader"),
+}
 var _arcs_mesh: MeshInstance3D
 var _arcs_origin := []
 var arcs := []
@@ -91,6 +102,7 @@ class Rec:
 	var label_kinds: PackedByteArray
 	var label_data: PackedFloat64Array  # world x, y, w, h, top
 	var label_texts: PackedStringArray
+	var label_colors: PackedColorArray
 	var blocks: Array  # text blocks in world units: {file, col, seg, rows, x, y, w, h, top}
 
 
@@ -130,8 +142,23 @@ func _ready() -> void:
 	var we := WorldEnvironment.new()
 	we.environment = _env
 	_root3d.add_child(we)
+	var sky := Sky.new()
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = load("res://shaders/sky.gdshader")
+	sky.sky_material = _sky_mat
+	_env.sky = sky
+	_ground = MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(2, 2)
+	_ground.mesh = plane
+	_ground.material_override = ShaderMaterial.new()
+	(_ground.material_override as ShaderMaterial).shader = load("res://shaders/grid3d.gdshader")
+	_ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_root3d.add_child(_ground)
 	_tiles_root = Node3D.new()
 	_root3d.add_child(_tiles_root)
+	_labels_root = Node3D.new()
+	_root3d.add_child(_labels_root)
 
 	_overlay = Control.new()
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -142,8 +169,8 @@ func _ready() -> void:
 	_cube = _make_cube()
 	_plane = _make_plane()
 	_sel_fill = _highlight("res://shaders/highlight_fill.gdshader", {})
-	_sel_xray = _highlight("res://shaders/highlight_xray.gdshader", {"width_px": 2.0, "face_alpha": 0.04})
-	_hov_xray = _highlight("res://shaders/highlight_xray.gdshader", {"width_px": 1.0, "face_alpha": 0.0})
+	_sel_xray = _highlight("res://shaders/highlight_outline.gdshader", {})
+	_hov_xray = _highlight("res://shaders/highlight_outline.gdshader", {})
 	_apply_settings()
 	var im := ImmediateMesh.new()
 	_arcs_mesh = MeshInstance3D.new()
@@ -168,9 +195,23 @@ func _ready() -> void:
 
 func _apply_theme() -> void:
 	_label_font = Style.font("ui", 500)
-	_env.background_color = Style.color("bg")
-	_env.fog_light_color = Style.color("bg")
+	var bg := Style.color("bg")
+	var horizon := bg.lerp(Style.color("text3"), 0.12)
+	_env.background_color = bg
+	_sky_mat.set_shader_parameter("top_color", bg)
+	_sky_mat.set_shader_parameter("horizon_color", horizon)
+	_apply_ground()
 	_overlay.queue_redraw()
+
+
+## Ground grid and horizon glow on, or the plain background.
+func _apply_ground() -> void:
+	var on: bool = Settings.get_value("viewport.grid")
+	var bg := Style.color("bg")
+	_env.background_mode = Environment.BG_SKY if on else Environment.BG_COLOR
+	_env.fog_light_color = bg.lerp(Style.color("text3"), 0.12) if on else bg
+	_ground.visible = on
+	(_ground.material_override as ShaderMaterial).set_shader_parameter("dot_color", Color(Style.color("text3"), 0.3))
 
 
 func _fit_viewport() -> void:
@@ -188,14 +229,24 @@ func _fit_viewport() -> void:
 func _apply_settings() -> void:
 	_fov = Settings.get_value("camera.fov")
 	_cam.fov = _fov
+	if _ground:
+		_apply_ground()
 	var sel: Color = Settings.get_value("highlight.selection")
 	var hov: Color = Settings.get_value("highlight.hover")
+	# selection / hover styles: outline (depth tested), xray (through
+	# everything) or off; the roof fill is a separate tint
 	var sm := _sel_xray.material_override as ShaderMaterial
 	var hm := _hov_xray.material_override as ShaderMaterial
+	sm.shader = _HL_SHADERS.get(Settings.get_value("highlight.style"), _HL_SHADERS.outline)
+	hm.shader = _HL_SHADERS.get(Settings.get_value("highlight.hover_style"), _HL_SHADERS.outline)
 	sm.set_shader_parameter("color", sel)
 	sm.set_shader_parameter("width_px", float(Settings.get_value("lines.selected_width")) * _f)
+	sm.set_shader_parameter("face_alpha", 0.0)
 	hm.set_shader_parameter("color", Color(hov, 0.55))
 	hm.set_shader_parameter("width_px", float(Settings.get_value("lines.hover_width")) * _f)
+	hm.set_shader_parameter("face_alpha", 0.0)
+	(_sel_fill.material_override as ShaderMaterial).set_shader_parameter("color",
+		Color(sel, float(Settings.get_value("highlight.fill")) * 0.6))
 	_arcs_origin = []  # rebuild arcs with the current opacity
 	_dirty = true
 	if _overlay:
@@ -230,6 +281,8 @@ func _update_arcs() -> void:
 		return
 	var top_a: float = Settings.get_value("relations.opacity")
 	var alpha: float = clamp(60.0 / arcs.size(), top_a * 0.25, top_a)
+	var rise: float = Settings.get_value("relations.arc_height")
+	(_arcs_mesh.material_override as StandardMaterial3D).no_depth_test = Settings.get_value("relations.through")
 	im.surface_begin(Mesh.PRIMITIVE_LINES)
 	for arc in arcs:
 		var ra: Array = arc.a
@@ -237,7 +290,7 @@ func _update_arcs() -> void:
 		var a := _world_to_render(ra[0] + ra[2] * 0.5, ra[4], ra[1] + ra[3] * 0.5)
 		var b := _world_to_render(rb[0] + rb[2] * 0.5, rb[4], rb[1] + rb[3] * 0.5)
 		var span := a.distance_to(b)
-		var ctrl: Vector3 = (a + b) * 0.5 + Vector3.UP * (max(a.y, b.y) - (a.y + b.y) * 0.5 + span * 0.45)
+		var ctrl: Vector3 = (a + b) * 0.5 + Vector3.UP * (max(a.y, b.y) - (a.y + b.y) * 0.5 + span * rise)
 		var c: Color = arc.color
 		var prev := a
 		for i in range(1, 25):
@@ -458,8 +511,14 @@ func _update_camera() -> void:
 	# with distance, so recentre long before the error nears a pixel
 	if max(abs(tx - _origin[0]), abs(ty - _origin[1])) > dist * 500.0:
 		_origin = [tx, ty]
-	var cp := cos(pitch)
-	var offset := Vector3(sin(yaw) * cp, sin(pitch), cos(yaw) * cp) * dist * S
+	# reading assist: while code under the target is readable, lean toward
+	# a top-down view; the user's own pitch is untouched and comes back
+	var p := pitch
+	var assist: float = Settings.get_value("camera.reading_assist")
+	if assist > 0.0 and _tween.is_empty():
+		p = lerp(pitch, max(pitch, 1.4), _reading * assist)
+	var cp := cos(p)
+	var offset := Vector3(sin(yaw) * cp, sin(p), cos(yaw) * cp) * dist * S
 	var target := Vector3((tx - _origin[0]) * S, th * S, (ty - _origin[1]) * S)
 	var pos := target + offset
 	# stay above whatever stands under the camera
@@ -476,6 +535,14 @@ func _update_camera() -> void:
 	_cam.far = r * 60.0 + 10.0
 	_env.fog_depth_begin = r * 2.0
 	_env.fog_depth_end = r * 14.0
+	# the ground grid follows the target, dots every 2^k world units
+	if _ground.visible:
+		_ground.position = Vector3(target.x, -r * 0.0005, target.z)
+		_ground.scale = Vector3.ONE * r * 30.0
+		var gm := _ground.material_override as ShaderMaterial
+		gm.set_shader_parameter("spacing", pow(2.0, floor(log(dist * 0.04) / log(2.0))) * S)
+		gm.set_shader_parameter("center", target)
+		gm.set_shader_parameter("radius", r * 12.0)
 
 
 func _process(dt: float) -> void:
@@ -484,6 +551,9 @@ func _process(dt: float) -> void:
 	_frame += 1
 	_step(dt)
 	_follow_floor(dt)
+	if abs(_reading - _reading_goal) > 0.002:
+		_reading = lerp(_reading, _reading_goal, 1.0 - exp(-dt * 3.0))
+		_dirty = true
 	if _pick_pending and Time.get_ticks_msec() / 1000.0 >= _pick_at:
 		_pick_pending = false
 		_send_pick()
@@ -618,6 +688,7 @@ func _update_tiles() -> void:
 ## Text blocks listed by the visible tiles, biggest text on screen first.
 func _update_text(cam_pos: Vector3) -> void:
 	var min_px: float = Settings.get_value("text.min_line_px")
+	var reading := 0.0
 	var seen := {}   # key -> index in wanted
 	var wanted := []
 	for key: Vector3i in _tiles:
@@ -638,6 +709,10 @@ func _update_text(cam_pos: Vector3) -> void:
 			if line_px >= min_px:
 				seen[k] = wanted.size()
 				wanted.append([line_px, b])
+			# how readable is the code at the orbit target?
+			if tx >= b.x and tx <= b.x + b.w and ty >= b.y and ty <= b.y + b.h:
+				reading = max(reading, smoothstep(5.0, 14.0, line_px))
+	_reading_goal = reading
 	if not Settings.get_value("viewport.code_text"):
 		wanted = []
 	_text.update(wanted, int(Settings.get_value("text.budget")), func(node: Node3D, b: Dictionary):
@@ -657,12 +732,13 @@ func _place_box(mi: MeshInstance3D, r: Array, top: float, kind := "") -> void:
 
 
 func _update_highlights() -> void:
-	_sel_xray.visible = not selection.is_empty()
-	_sel_fill.visible = _sel_xray.visible
-	if _sel_xray.visible:
+	var has_sel := not selection.is_empty()
+	_sel_xray.visible = has_sel and Settings.get_value("highlight.style") != "off"
+	_sel_fill.visible = has_sel and float(Settings.get_value("highlight.fill")) > 0.0
+	if has_sel:
 		_place_box(_sel_xray, selection.rect, selection.top, selection.get("kind", ""))
 		_place_box(_sel_fill, selection.rect, selection.top, selection.get("kind", ""))
-	var hv: bool = hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover")
+	var hv: bool = hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover") 		and Settings.get_value("highlight.hover_style") != "off"
 	_hov_xray.visible = hv
 	if hv:
 		_place_box(_hov_xray, hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
@@ -724,6 +800,7 @@ func _on_tile(t: Dictionary) -> void:
 		rec.label_kinds.append(l.kind)
 		rec.label_data.append_array([ox + r.position.x * ts, oy + r.position.y * ts, r.size.x * ts, r.size.y * ts, l.top * ts])
 		rec.label_texts.append(l.text)
+		rec.label_colors.append(l.color)
 	rec.node = node
 	node.visible = false
 	_tiles_root.add_child(node)
@@ -924,6 +1001,8 @@ func _draw_overlay() -> void:
 			o.draw_colored_polygon(pts, Color(HIT_COLOR, 0.5))
 	if Settings.get_value("viewport.labels"):
 		_draw_labels()
+	else:
+		_place_labels_3d([])
 
 
 func _draw_labels() -> void:
@@ -952,9 +1031,75 @@ func _draw_labels() -> void:
 			var w := s0.distance_to(s1)
 			if w < min_box or not view.has_point(s0):
 				continue
-			cand.append({"prio": w, "text": rec.label_texts[i], "max_w": w - 8.0,
-				"pos": s0 + Vector2(2, -fs - 6), "size": fs})
-	ViewCommon.draw_labels(o, _label_font, cand, Settings.get_value("labels.max"))
+			var kind := int(rec.label_kinds[i])
+			cand.append({"id": id, "prio": w, "kind": kind, "color": rec.label_colors[i], "text": rec.label_texts[i],
+				"max_w": w - 8.0, "pos": s0 + Vector2(2, -fs - 6), "size": fs if kind == 0 else max(fs - 1, 8),
+				"at": p0})
+	_place_labels_3d(ViewCommon.place_labels(cand, Settings.get_value("labels.max")))
+
+
+## 3D labels are Label3D nodes: depth tested, so buildings in front hide
+## them (unless "Labels through buildings" is on), and pixel-sized.
+func _place_labels_3d(placed: Array) -> void:
+	var through: bool = Settings.get_value("viewport.labels_through")
+	# at 1 render unit from the camera, one physical pixel is this big
+	var px: float = 2.0 * tan(deg_to_rad(_fov) * 0.5) / max(_vp.size.y, 1.0)
+	var bg := Style.color("bg")
+	var bold := Style.font("ui", 600)
+	var regular := Style.font("ui", 500)
+	# labels stay attached to their node across frames, so an unchanged
+	# label is never rebuilt
+	var next := {}
+	for p in placed:
+		var id: int = p.c.id
+		if _label_of.has(id):
+			next[id] = _label_of[id]
+			_label_of.erase(id)
+	for id in _label_of:
+		var old: Label3D = _label_of[id]
+		old.visible = false
+		_label_free.append(old)
+	for p in placed:
+		var c: Dictionary = p.c
+		var l: Label3D = next.get(c.id)
+		if l == null:
+			if _label_free.is_empty():
+				l = Label3D.new()
+				l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+				l.fixed_size = true
+				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+				l.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+				l.render_priority = 10
+				l.outline_render_priority = 9
+				l.double_sided = true
+				_labels_root.add_child(l)
+			else:
+				l = _label_free.pop_back()
+			next[c.id] = l
+		var fs := int(round(float(c.size) * _f))
+		l.visible = true
+		l.position = c.at
+		# Label3D rebuilds its mesh on most property changes: only touch what
+		# changed (the pool is reused every frame)
+		var look := [p.text, c.kind, fs, c.color, through, px, Style.theme_id]
+		if l.get_meta("look", []) == look:
+			continue
+		l.set_meta("look", look)
+		l.no_depth_test = through
+		l.text = p.text
+		l.font = bold if c.kind == 0 else regular
+		l.font_size = fs
+		l.pixel_size = px
+		l.outline_size = max(int(fs * 0.45), 4)
+		l.offset = Vector2(2.0, 4.0) * _f
+		var col: Color = c.color
+		if c.kind == 0:
+			l.modulate = col.lerp(Color.WHITE, 0.55)
+			l.outline_modulate = Color(bg.lerp(col, 0.3), 0.95)
+		else:
+			l.modulate = Style.color("text2")
+			l.outline_modulate = Color(bg, 0.9)
+	_label_of = next
 
 
 func set_search_results(files: Array) -> void:

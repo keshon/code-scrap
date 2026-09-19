@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **4** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **5** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 5 | Labels carry the box color (`u8 r, g, b`) and, for scopes, the scope kind in the kind byte's high nibble. Scope instances: kind = 2 + scope kind / 10, depth = nesting inside the file. `options` accepts `rules`. |
 | 4 | `children` op. `search` also returns `paths`/`pathTotal` (files and folders). `node` accepts `path` instead of `node`. |
 | 3 | `hello.lenses` (lens descriptors) and `hello.legend`. `node.ancestors`. Relation replies carry `names`. |
 | 2 | Text blocks carry a content key (`u32 key`) in tile frames and text frames. `hello.protocol` added. `options` accepts `weights` and `gitSince`. |
@@ -43,7 +44,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 | `search` | `q` (symbol-name prefix), `page`, `size` (≤ 500) | `search` |
 | `edges` | `node` | relations: imports (file level) |
 | `calls` | `node` | relations: syntax-level call graph |
-| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `gitSince` | no reply. The map rebuilds and a new `hello` follows when anything changed. |
+| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince` | no reply. The map rebuilds and a new `hello` follows when anything changed. |
 | `open` | `path` | new `hello` once indexed, or `{"op": "error", "error": …}` |
 
 ## Messages (server → viewer)
@@ -52,7 +53,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 4, "gen": 3,
+  "op": "hello", "protocol": 5, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,
@@ -119,7 +120,7 @@ u32 n                        boxes
 f32 × 16n (2D) | 20n (3D)    MultiMesh instance buffer (TRANSFORM_2D|3D + color + custom)
 i32 × n                      node ids
 u32 nl                       labels
-nl × { i32 id, u8 kind, f32 x, y, w, h, top, u16 len, utf8 × len }
+nl × { i32 id, u8 kind, u8 r, g, b, f32 x, y, w, h, top, u16 len, utf8 × len }
 u32 nb                       text blocks
 nb × { i32 file, u16 col, u16 seg, u16 rows, f32 x, y, w, h, top, u32 key }
 ```
@@ -127,8 +128,9 @@ nb × { i32 file, u16 col, u16 seg, u16 rows, f32 x, y, w, h, top, u32 key }
 - Coordinates are tile-local (0..1).
 - Instance custom data = `(edge mask, kind, depth, trueMin / pieceWidth)`:
   - the edge mask marks the box's real edges in this tile (1 left, 2 top, 4 right, 8 bottom);
-  - kind 0 is a directory, 1 a file, 2 a scope.
-- Label kinds are the same as box kinds.
+  - kind 0 is a directory, 1 a file, 2 + k/10 a scope of kind k (0 block, 1 func, 2 type, 3 namespace);
+  - depth is the nesting depth (for scopes: inside their file).
+- Label kind: low nibble 0 dir, 1 file, 2 scope; high nibble the scope kind. `r, g, b` is the box's outline color.
 
 ### 3: text block
 

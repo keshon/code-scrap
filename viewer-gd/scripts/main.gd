@@ -246,6 +246,7 @@ func is_3d() -> bool:
 func set_view(three_d: bool) -> void:
 	toolbar.set_3d(three_d)
 	view_panel.set_3d(three_d)
+	legend.set_3d(three_d)
 	if three_d == is_3d():
 		return
 	if three_d:
@@ -353,7 +354,8 @@ func _send_server_settings() -> void:
 	for id in Settings.values_with_scope("server"):
 		if id.begins_with("importance."):
 			weights[id.substr(11)] = Settings.get_value(id)
-	client.request("options", {"weights": weights, "gitSince": Settings.get_value("git.since")})
+	client.request("options", {"weights": weights, "rules": Settings.get_value("importance.rules"),
+		"gitSince": Settings.get_value("git.since")})
 
 
 func _on_setting_changed(id: String, _v: Variant) -> void:
@@ -379,7 +381,7 @@ func _on_hello(info: Dictionary) -> void:
 	var regen: bool = hello_info.has("gen") and int(hello_info.gen) != int(info.gen)
 	hello_info = info
 	view_panel.sync(info)
-	legend.set_view(info.get("legend", {}), view_panel.color_lens())
+	legend.set_view(info.get("legend", {}), view_panel.color_lens(), view_panel.height_lens())
 	toolbar.set_repo(info.name, info.root)
 	header.set_repo(info.name)
 	if info.root != _last_root:
@@ -453,6 +455,8 @@ func _on_reply(id: int, data: Dictionary) -> void:
 		"node":
 			if id == _node_req:
 				_on_node(data)
+		"error":
+			status.set_status("Server: " + String(data.get("error", "")))
 		"edges", "calls":
 			if _rel_reqs.get(id, "") == data.op:
 				_rel[data.op] = data
@@ -512,12 +516,16 @@ func _refresh_relations() -> void:
 
 func _push_arcs() -> void:
 	var list := []
+	var direction: String = Settings.get_value("relations.direction")
+	var most: int = Settings.get_value("relations.max")
 	for op in _rel:
 		var r: Dictionary = _rel[op]
 		var nodes: Dictionary = r.nodes
 		for dir in [0, 1]:
 			var key := "out" if dir == 0 else "in"
-			for e in r[key]:
+			if direction != "both" and direction != key:
+				continue
+			for e in r[key].slice(0, most):
 				list.append({"a": nodes[str(int(e[0]))], "b": nodes[str(int(e[1]))], "color": Settings.get_value(REL_COLORS[op][dir])})
 	map.set_arcs(list)
 	city.set_arcs(list)
