@@ -45,6 +45,17 @@
       ]
     },
     {
+      "id": "lines",
+      "label": "Lines",
+      "settings": [
+        {"id": "lines.box_width", "type": "float", "default": 1.0, "min": 0.5, "max": 4.0, "step": 0.25, "label": "Box outline", "desc": "Width of box outlines in pixels (times interface scale). In 2D they snap to whole pixels, so every line has the same weight."},
+        {"id": "lines.min_box_px", "type": "float", "default": 6.0, "min": 2.0, "max": 40.0, "step": 1.0, "label": "Outline boxes from", "desc": "Boxes smaller than this on screen (px) are drawn as solid cells without an outline."},
+        {"id": "lines.depth_tone", "type": "float", "default": 0.3, "min": 0.0, "max": 1.0, "step": 0.05, "label": "Nesting tone", "desc": "How much lighter the fill of deeper-nested boxes gets, so nesting reads without relying on line weight."},
+        {"id": "lines.selected_width", "type": "float", "default": 2.0, "min": 0.5, "max": 6.0, "step": 0.25, "label": "Selection outline", "desc": "Width of the selection outline in pixels."},
+        {"id": "lines.hover_width", "type": "float", "default": 1.0, "min": 0.5, "max": 6.0, "step": 0.25, "label": "Hover outline", "desc": "Width of the hover outline in pixels."}
+      ]
+    },
+    {
       "id": "highlight",
       "label": "Highlights",
       "settings": [
@@ -82,6 +93,13 @@
         {"id": "importance.minified", "type": "float", "default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01, "scope": "server", "label": "Generated / minified", "desc": "Area kept by files with very long lines."},
         {"id": "importance.asset", "type": "float", "default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "scope": "server", "label": "Assets", "desc": "Area kept by images, fonts, media, archives, source maps and lockfiles."},
         {"id": "importance.data", "type": "float", "default": 0.3, "min": 0.0, "max": 1.0, "step": 0.01, "scope": "server", "label": "Data / config", "desc": "Area kept by JSON, YAML, TOML and similar files."}
+      ]
+    },
+    {
+      "id": "diagnostics",
+      "label": "Diagnostics",
+      "settings": [
+        {"id": "debug.hud", "type": "bool", "default": false, "label": "Diagnostics overlay", "desc": "Frame time, tile and text streaming counters in the viewport corner (F12)."}
       ]
     },
     {

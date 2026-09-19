@@ -35,8 +35,13 @@ var _tiles_root: Node2D
 var _overlay: Control
 var _quad: ArrayMesh
 var _box_mat: ShaderMaterial
-var _code_mat: CanvasItemMaterial
-var _level := 0
+var _level := -1
+
+# diagnostics (HUD)
+var stat_shown := 0
+var stat_missing := 0
+var stat_evicted := 0
+var stat_gens := 0
 var _dirty := true
 var _last_request := ""
 var _frame := 0
@@ -109,8 +114,6 @@ func _ready() -> void:
 
 	_box_mat = ShaderMaterial.new()
 	_box_mat.shader = load("res://shaders/box.gdshader")
-	_code_mat = CanvasItemMaterial.new()
-	_code_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
 
 	resized.connect(func(): _dirty = true)
 
@@ -240,6 +243,8 @@ func _process(dt: float) -> void:
 	if _pick_pending and Time.get_ticks_msec() / 1000.0 >= _pick_at:
 		_pick_pending = false
 		_send_pick()
+	if _text != null and _text.animating():
+		_dirty = true  # text fades in/out
 	if _dirty and gen >= 0:
 		_dirty = false
 		_update_tiles()
@@ -249,12 +254,21 @@ func _process(dt: float) -> void:
 
 # ---------------------------------------------------------------- tiles
 
+func text_layer() -> TextLayer:
+	return _text
+
+
+func tile_count() -> int:
+	return _tiles.size()
+
+
 func _on_hello(info: Dictionary) -> void:
 	var first := gen < 0
 	gen = int(info.gen)
+	stat_gens += 1
 	world = info.world
 	max_z = int(info.maxZ)
-	_text.reset(gen)
+	_text.set_gen(gen)
 	if first:
 		home(false)
 	_last_request = ""
@@ -265,7 +279,12 @@ func _level_for_zoom() -> int:
 	# +0.9: tiles are shown at 0.54–1.07× their native size, so code text is
 	# almost never magnified
 	var px_zoom := zoom * get_window().content_scale_factor  # physical pixels
-	return clampi(int(floor(log(px_zoom / TILE_PX) / log(2.0) + 0.9)), 0, max_z)
+	var lf := log(px_zoom / TILE_PX) / log(2.0) + 0.9
+	# hysteresis: stay on the current level until the zoom is clearly past
+	# its range, so wobbling at a boundary does not swap every tile
+	if _level >= 0 and lf > _level - 0.12 and lf < _level + 1.12:
+		return clampi(_level, 0, max_z)
+	return clampi(int(floor(lf)), 0, max_z)
 
 
 func _update_tiles() -> void:
@@ -295,15 +314,10 @@ func _update_tiles() -> void:
 			if rec != null:
 				shown[key] = rec  # stale generation: keep until the fresh one lands
 			else:
-				# show the nearest loaded ancestor meanwhile
-				for up in range(1, 6):
-					if z - up < 0:
-						break
-					var ak := Vector3i(z - up, tx >> up, ty >> up)
-					if _tiles.has(ak):
-						shown[ak] = _tiles[ak]
-						break
+				ViewCommon.tile_fallback(_tiles, key, shown)
 	missing.sort_custom(func(a, b): return a[0] < b[0])
+	stat_shown = shown.size()
+	stat_missing = missing.size()
 	var keys := []
 	for m in missing:
 		keys.append([m[1].x, m[1].y, m[1].z])
@@ -331,26 +345,26 @@ func _update_tiles() -> void:
 func _update_text() -> void:
 	var view := Rect2(Vector2.ZERO, size).grow(64)
 	var min_px: float = Settings.get_value("text.min_line_px")
-	var seen := {}
+	var seen := {}   # key -> index in wanted
 	var wanted := []
 	for key: Vector3i in _tiles:
 		var rec: TileRec = _tiles[key]
 		if not rec.node.visible:
 			continue
 		for b in rec.blocks:
-			var k := TextLayer.key_of(b)
-			if seen.has(k):
-				continue
-			seen[k] = true
 			var line_px: float = b.h / b.rows * zoom
 			if line_px < min_px or not view.intersects(rect_to_screen([b.x, b.y, b.w, b.h])):
 				continue
+			var k := TextLayer.key_of(b)
+			if seen.has(k):
+				# an old-generation tile may still list the block: prefer the
+				# current placement
+				if int(b.gen) == gen:
+					wanted[seen[k]] = [line_px, b]
+				continue
+			seen[k] = wanted.size()
 			wanted.append([line_px, b])
-	wanted.sort_custom(func(a, b): return a[0] > b[0])
-	var list := []
-	for w in wanted.slice(0, int(Settings.get_value("text.budget"))):
-		list.append(w[1])
-	_text.update(list, func(node: Node2D, b: Dictionary):
+	_text.update(wanted, int(Settings.get_value("text.budget")), func(node: Node2D, b: Dictionary):
 		node.position = world_to_screen(b.x, b.y)
 		node.scale = Vector2(b.w * zoom, b.h * zoom))
 
@@ -365,6 +379,7 @@ func _evict() -> void:
 			continue
 		rec.node.queue_free()
 		_tiles.erase(rec.key)
+		stat_evicted += 1
 
 
 func _on_tile(t: Dictionary) -> void:
@@ -399,7 +414,7 @@ func _on_tile(t: Dictionary) -> void:
 	var oy: float = t.y * ts
 	for bl in t.blocks:
 		var br: Rect2 = bl.rect
-		rec.blocks.append({"file": bl.file, "col": bl.col, "seg": bl.seg, "rows": bl.rows,
+		rec.blocks.append({"file": bl.file, "col": bl.col, "seg": bl.seg, "rows": bl.rows, "key": bl.key, "gen": gen,
 			"x": ox + br.position.x * ts, "y": oy + br.position.y * ts, "w": br.size.x * ts, "h": br.size.y * ts})
 	for l in t.labels:
 		var r: Rect2 = l.rect
@@ -474,6 +489,20 @@ func _zoom_at(p: Vector2, f: float) -> void:
 	_anchor = p
 	_anchor_w = screen_to_world(p)
 	_zoom_target = clamp(_zoom_target * f, min_zoom(), max_zoom())
+
+
+## A rectangle outline of w UI px, snapped to whole physical pixels and
+## drawn inside r, so highlight lines are as crisp as the box outlines.
+func _outline(r: Rect2, c: Color, w: float) -> void:
+	var f := get_window().content_scale_factor
+	var a := (r.position * f).round() / f
+	var b := (r.end * f).round() / f
+	var t := Style.line_px(w) / f
+	var o := _overlay
+	o.draw_rect(Rect2(a.x, a.y, b.x - a.x, t), c)
+	o.draw_rect(Rect2(a.x, b.y - t, b.x - a.x, t), c)
+	o.draw_rect(Rect2(a.x, a.y + t, t, b.y - a.y - 2.0 * t), c)
+	o.draw_rect(Rect2(b.x - t, a.y + t, t, b.y - a.y - 2.0 * t), c)
 
 
 func _schedule_pick() -> void:
@@ -578,13 +607,13 @@ func _draw_overlay() -> void:
 	if hover.has("rect") and int(hover.get("node", -1)) >= 0:
 		var hr := rect_to_screen(hover.rect)
 		o.draw_rect(hr, Color(hover_c, 0.06))
-		o.draw_rect(hr, Color(hover_c, 0.7), false, 1.0)
+		_outline(hr, Color(hover_c, 0.7), Settings.get_value("lines.hover_width"))
 		if hover.has("lineRect"):
 			o.draw_rect(rect_to_screen(hover.lineRect), Color(hover_c, 0.12))
 	if selection_rect.size() == 4:
 		var sr := rect_to_screen(selection_rect)
 		o.draw_rect(sr, Color(sel_c, 0.16))
-		o.draw_rect(sr, sel_c, false, 2.0)
+		_outline(sr, sel_c, Settings.get_value("lines.selected_width"))
 
 
 func _draw_labels() -> void:
@@ -592,10 +621,8 @@ func _draw_labels() -> void:
 	var seen := {}
 	var cand := []
 	var view := Rect2(Vector2.ZERO, size)
-	var LABEL_FONT_SIZE: int = Settings.get_value("labels.font_size")
+	var fs: int = Settings.get_value("labels.font_size")
 	var min_box: float = Settings.get_value("labels.min_box_px")
-	var pill_c := Color(Style.color("bg"), 0.86)
-	var text_c := Style.color("text")
 	for key: Vector3i in _tiles:
 		var rec: TileRec = _tiles[key]
 		if not rec.node.visible:
@@ -615,39 +642,10 @@ func _draw_labels() -> void:
 				continue
 			if not view.intersects(r):
 				continue
-			cand.append([r.size.x, r, rec.label_texts[i], kind])
-	cand.sort_custom(func(a, b): return a[0] > b[0])
-	var placed: Array[Rect2] = []
-	var budget: int = Settings.get_value("labels.max")
-	for c in cand:
-		if budget <= 0:
-			break
-		var r: Rect2 = c[1]
-		var fs := LABEL_FONT_SIZE
-		if c[3] == 2:
-			fs = clampi(int(r.size.y * 0.85), 8, LABEL_FONT_SIZE)
-		var text: String = c[2]
-		var max_w := r.size.x - 8.0
-		var tw := _label_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		if tw > max_w:
-			var keep := int(text.length() * max_w / tw) - 1
-			if keep < 3:
-				continue
-			text = text.substr(0, keep) + "…"
-			tw = _label_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var pos := Vector2(max(r.position.x, 0.0) + 2.0, max(r.position.y, 0.0) + 1.0)
-		var pill := Rect2(pos, Vector2(tw + 6.0, fs + 4.0))
-		var hit := false
-		for p in placed:
-			if p.intersects(pill):
-				hit = true
-				break
-		if hit:
-			continue
-		placed.append(pill)
-		budget -= 1
-		o.draw_rect(pill, pill_c)
-		o.draw_string(_label_font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_c)
+			cand.append({"prio": r.size.x, "text": rec.label_texts[i], "max_w": r.size.x - 8.0,
+				"pos": Vector2(max(r.position.x, 0.0) + 2.0, max(r.position.y, 0.0) + 1.0),
+				"size": clampi(int(r.size.y * 0.85), 8, fs) if kind == 2 else fs})
+	ViewCommon.draw_labels(o, _label_font, cand, Settings.get_value("labels.max"))
 
 
 # ---------------------------------------------------------------- relations

@@ -72,6 +72,12 @@ var _floor_target := 0.0     # roof height under the target
 var _heights_at := 0.0
 var _heights_req := -1
 var selection := {}          # {rect, top}
+
+# diagnostics (HUD)
+var stat_shown := 0
+var stat_missing := 0
+var stat_evicted := 0
+var stat_gens := 0
 var hit_files := []          # [x, y, w, h, top]
 var current_hit := {}        # {rect, top}
 
@@ -168,10 +174,13 @@ func _apply_theme() -> void:
 
 
 func _fit_viewport() -> void:
-	_f = get_window().content_scale_factor
-	_vpc.scale = Vector2.ONE / _f
+	var f := get_window().content_scale_factor
+	_vpc.scale = Vector2.ONE / f
 	_vpc.position = Vector2.ZERO
-	_vpc.size = size * _f
+	_vpc.size = size * f
+	if f != _f:
+		_f = f
+		_apply_settings()  # highlight widths are in physical pixels
 	_dirty = true
 
 
@@ -181,8 +190,12 @@ func _apply_settings() -> void:
 	_cam.fov = _fov
 	var sel: Color = Settings.get_value("highlight.selection")
 	var hov: Color = Settings.get_value("highlight.hover")
-	(_sel_xray.material_override as ShaderMaterial).set_shader_parameter("color", sel)
-	(_hov_xray.material_override as ShaderMaterial).set_shader_parameter("color", Color(hov, 0.55))
+	var sm := _sel_xray.material_override as ShaderMaterial
+	var hm := _hov_xray.material_override as ShaderMaterial
+	sm.set_shader_parameter("color", sel)
+	sm.set_shader_parameter("width_px", float(Settings.get_value("lines.selected_width")) * _f)
+	hm.set_shader_parameter("color", Color(hov, 0.55))
+	hm.set_shader_parameter("width_px", float(Settings.get_value("lines.hover_width")) * _f)
 	_arcs_origin = []  # rebuild arcs with the current opacity
 	_dirty = true
 	if _overlay:
@@ -473,6 +486,8 @@ func _process(dt: float) -> void:
 	if _pick_pending and Time.get_ticks_msec() / 1000.0 >= _pick_at:
 		_pick_pending = false
 		_send_pick()
+	if _text != null and _text.animating():
+		_dirty = true  # text fades in/out
 	if _dirty and gen >= 0:
 		_dirty = false
 		_update_camera()
@@ -495,12 +510,21 @@ func _follow_floor(dt: float) -> void:
 
 # ---------------------------------------------------------------- tiles
 
+func text_layer() -> TextLayer:
+	return _text
+
+
+func tile_count() -> int:
+	return _tiles.size()
+
+
 func _on_hello(info: Dictionary) -> void:
 	gen = int(info.gen)
+	stat_gens += 1
 	world = info.world
 	max_z = int(info.maxZ)
 	max_top = float(info.get("maxTop", 0.05))
-	_text.reset(gen)
+	_text.set_gen(gen)
 	_last_request = ""
 	_dirty = true
 
@@ -558,13 +582,9 @@ func _update_tiles() -> void:
 		if rec != null:
 			shown[key] = rec
 		else:
-			for up in range(1, 6):
-				if key.x - up < 0:
-					break
-				var ak := Vector3i(key.x - up, key.y >> up, key.z >> up)
-				if _tiles.has(ak):
-					shown[ak] = _tiles[ak]
-					break
+			ViewCommon.tile_fallback(_tiles, key, shown)
+	stat_shown = shown.size()
+	stat_missing = keys.size()
 	var sig := str(gen) + ":" + str(keys)
 	if sig != _last_request and client != null:
 		_last_request = sig
@@ -591,12 +611,13 @@ func _update_tiles() -> void:
 			if not rec.node.visible:
 				rec.node.queue_free()
 				_tiles.erase(rec.key)
+				stat_evicted += 1
 
 
 ## Text blocks listed by the visible tiles, biggest text on screen first.
 func _update_text(cam_pos: Vector3) -> void:
 	var min_px: float = Settings.get_value("text.min_line_px")
-	var seen := {}
+	var seen := {}   # key -> index in wanted
 	var wanted := []
 	for key: Vector3i in _tiles:
 		var rec: Rec = _tiles[key]
@@ -605,20 +626,18 @@ func _update_text(cam_pos: Vector3) -> void:
 		for b in rec.blocks:
 			var k := TextLayer.key_of(b)
 			if seen.has(k):
+				if int(b.gen) == gen and int(wanted[seen[k]][1].gen) != gen:
+					wanted[seen[k]][1] = b  # prefer the current placement
 				continue
-			seen[k] = true
 			var c := _world_to_render(b.x + b.w * 0.5, b.top, b.y + b.h * 0.5)
 			var near := Vector3(clamp(cam_pos.x, c.x - b.w * S * 0.5, c.x + b.w * S * 0.5), c.y,
 				clamp(cam_pos.z, c.z - b.h * S * 0.5, c.z + b.h * S * 0.5))
 			var d: float = max(cam_pos.distance_to(near) / S, 1e-12)
 			var line_px: float = b.h / b.rows * _ppu(d)
 			if line_px >= min_px:
+				seen[k] = wanted.size()
 				wanted.append([line_px, b])
-	wanted.sort_custom(func(a, b): return a[0] > b[0])
-	var list := []
-	for w in wanted.slice(0, int(Settings.get_value("text.budget"))):
-		list.append(w[1])
-	_text.update(list, func(node: Node3D, b: Dictionary):
+	_text.update(wanted, int(Settings.get_value("text.budget")), func(node: Node3D, b: Dictionary):
 		node.position = _world_to_render(b.x, b.top, b.y)
 		node.scale = Vector3(b.w * S, 1.0, b.h * S))
 
@@ -694,7 +713,7 @@ func _on_tile(t: Dictionary) -> void:
 	var oy: float = t.y * ts
 	for bl in t.blocks:
 		var br: Rect2 = bl.rect
-		rec.blocks.append({"file": bl.file, "col": bl.col, "seg": bl.seg, "rows": bl.rows,
+		rec.blocks.append({"file": bl.file, "col": bl.col, "seg": bl.seg, "rows": bl.rows, "key": bl.key, "gen": gen,
 			"x": ox + br.position.x * ts, "y": oy + br.position.y * ts, "w": br.size.x * ts, "h": br.size.y * ts, "top": bl.top * ts})
 	for l in t.labels:
 		var r: Rect2 = l.rect
@@ -901,6 +920,7 @@ func _draw_labels() -> void:
 	var cand := []
 	var view := Rect2(Vector2.ZERO, size)
 	var min_box: float = Settings.get_value("labels.min_box_px")
+	var fs: int = Settings.get_value("labels.font_size")
 	for key: Vector3i in _tiles:
 		var rec: Rec = _tiles[key]
 		if not rec.node.visible:
@@ -920,38 +940,9 @@ func _draw_labels() -> void:
 			var w := s0.distance_to(s1)
 			if w < min_box or not view.has_point(s0):
 				continue
-			cand.append([w, s0, rec.label_texts[i], _cam.global_position.distance_to(p0)])
-	cand.sort_custom(func(a, b): return a[0] > b[0])
-	var placed: Array[Rect2] = []
-	var budget: int = Settings.get_value("labels.max")
-	var fs: int = Settings.get_value("labels.font_size")
-	var pill_c := Color(Style.color("bg"), 0.86)
-	var text_c := Style.color("text")
-	for c in cand:
-		if budget <= 0:
-			break
-		var text: String = c[2]
-		var tw := _label_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var max_w: float = c[0] - 8.0
-		if tw > max_w:
-			var keep := int(text.length() * max_w / tw) - 1
-			if keep < 3:
-				continue
-			text = text.substr(0, keep) + "…"
-			tw = _label_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var pos: Vector2 = c[1] + Vector2(2, -fs - 6)
-		var pill := Rect2(pos, Vector2(tw + 6.0, fs + 4.0))
-		var hit := false
-		for p in placed:
-			if p.intersects(pill):
-				hit = true
-				break
-		if hit:
-			continue
-		placed.append(pill)
-		budget -= 1
-		o.draw_rect(pill, pill_c)
-		o.draw_string(_label_font, pos + Vector2(3.0, fs * 0.95 + 1.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_c)
+			cand.append({"prio": w, "text": rec.label_texts[i], "max_w": w - 8.0,
+				"pos": s0 + Vector2(2, -fs - 6), "size": fs})
+	ViewCommon.draw_labels(o, _label_font, cand, Settings.get_value("labels.max"))
 
 
 func set_search_results(files: Array) -> void:

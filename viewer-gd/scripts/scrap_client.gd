@@ -12,6 +12,7 @@ signal text_received(block: Dictionary)
 signal font_ready
 
 const TILE_PX := 256
+const PROTOCOL := 2   ## docs/protocol.md; must match the server's hello.protocol
 
 var url := "ws://127.0.0.1:7878/ws"
 var repo := ""        ## folder to index when we launch the server
@@ -152,6 +153,8 @@ func _on_text(s: String) -> void:
 		return
 	match data.get("op", ""):
 		"hello":
+			if int(data.get("protocol", 0)) != PROTOCOL:
+				push_error("scrap server speaks protocol %d, this viewer %d: rebuild scrap (build-n-run.bat) or stop the old server" % [int(data.get("protocol", 0)), PROTOCOL])
 			# a server left over from another session may be mapping a
 			# different folder: ask it to switch to ours
 			if _repo_explicit and not _open_sent and _norm(data.get("root", "")) != _norm(repo):
@@ -219,9 +222,9 @@ func _on_binary(b: PackedByteArray) -> void:
 			"file": b.decode_s32(off), "col": b.decode_u16(off + 4), "seg": b.decode_u16(off + 6),
 			"rows": b.decode_u16(off + 8),
 			"rect": Rect2(b.decode_float(off + 10), b.decode_float(off + 14), b.decode_float(off + 18), b.decode_float(off + 22)),
-			"top": b.decode_float(off + 26),
+			"top": b.decode_float(off + 26), "key": b.decode_u32(off + 30),
 		})
-		off += 30
+		off += 34
 	t.blocks = blocks
 	tile_received.emit(t)
 
@@ -233,9 +236,10 @@ func _on_text_block(b: PackedByteArray) -> void:
 	t.seg = b.decode_u16(8)
 	t.rows = b.decode_u16(10)
 	t.gen = b.decode_u32(12)
+	t.key = b.decode_u32(16)
 	var n: int = tex_w * t.rows
-	t.color = Image.create_from_data(tex_w, t.rows, false, Image.FORMAT_RGBA8, b.slice(16, 16 + n * 4))
-	t.glyph = Image.create_from_data(tex_w, t.rows, false, Image.FORMAT_RG8, b.slice(16 + n * 4, 16 + n * 6))
+	t.color = Image.create_from_data(tex_w, t.rows, false, Image.FORMAT_RGBA8, b.slice(20, 20 + n * 4))
+	t.glyph = Image.create_from_data(tex_w, t.rows, false, Image.FORMAT_RG8, b.slice(20 + n * 4, 20 + n * 6))
 	text_received.emit(t)
 
 

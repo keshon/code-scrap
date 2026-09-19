@@ -39,6 +39,18 @@ scrap_text_weight={
 "type": "float",
 "value": 0.75
 }
+scrap_line_px={
+"type": "float",
+"value": 1.0
+}
+scrap_line_min_box={
+"type": "float",
+"value": 6.0
+}
+scrap_depth_tone={
+"type": "float",
+"value": 0.3
+}
 
 [rendering]
 

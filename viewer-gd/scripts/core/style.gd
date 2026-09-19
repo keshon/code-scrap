@@ -22,10 +22,15 @@ var theme: Theme
 var fonts := {}  # "plex-sans" -> {400: Font, 500: Font, 600: Font}
 
 
+# setting -> [shader global, scales with the interface]
+# Pixel sizes that scale are in physical pixels on the GPU.
 const SHADER_GLOBALS := {
-	"text.glyph_from_px": "scrap_glyph_from",
-	"text.glyph_full_px": "scrap_glyph_full",
-	"text.weight": "scrap_text_weight",
+	"text.glyph_from_px": ["scrap_glyph_from", false],
+	"text.glyph_full_px": ["scrap_glyph_full", false],
+	"text.weight": ["scrap_text_weight", false],
+	"lines.box_width": ["scrap_line_px", true],
+	"lines.min_box_px": ["scrap_line_min_box", true],
+	"lines.depth_tone": ["scrap_depth_tone", false],
 }
 
 
@@ -39,8 +44,9 @@ func _ready() -> void:
 			apply(v)
 		elif id == "ui.scale" or id == "ui.scale_auto":
 			apply_scale()
+			_sync_shader_globals()
 		elif SHADER_GLOBALS.has(id):
-			RenderingServer.global_shader_parameter_set(SHADER_GLOBALS[id], float(v)))
+			_sync_shader_globals())
 	Settings.reloaded.connect(func():
 		apply(Settings.get_value("ui.theme"))
 		apply_scale()
@@ -48,8 +54,19 @@ func _ready() -> void:
 
 
 func _sync_shader_globals() -> void:
+	var f := get_tree().root.content_scale_factor
 	for id in SHADER_GLOBALS:
-		RenderingServer.global_shader_parameter_set(SHADER_GLOBALS[id], float(Settings.get_value(id)))
+		var g: Array = SHADER_GLOBALS[id]
+		var v := float(Settings.get_value(id))
+		if g[1]:
+			v *= f
+		RenderingServer.global_shader_parameter_set(g[0], v)
+
+
+## A width in UI pixels as whole physical pixels (at least one), for lines
+## that should look the same everywhere.
+func line_px(ui_px: float) -> float:
+	return max(1.0, round(ui_px * get_tree().root.content_scale_factor))
 
 
 # ------------------------------------------------------------------ scale

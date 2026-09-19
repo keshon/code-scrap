@@ -110,8 +110,11 @@ func TestProtocol(t *testing.T) {
 			return false
 		}
 		rows := int(binary.LittleEndian.Uint16(b[10:]))
-		if rows == 0 || len(b) != 16+rows*128*6 {
+		if rows == 0 || len(b) != 20+rows*128*6 {
 			t.Fatalf("text frame: rows %d, len %d", rows, len(b))
+		}
+		if key := binary.LittleEndian.Uint32(b[16:]); key != st.renderer.TextKey(fileNode, 0, 0) || key == 0 {
+			t.Fatalf("text frame: key %d", key)
 		}
 		return true
 	})

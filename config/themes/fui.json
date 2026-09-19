@@ -1,11 +1,11 @@
 {
   "name": "FUI",
-  "desc": "Fictional-UI instrument panel: hairlines, square corners, monospace uppercase labels, corner brackets.",
+  "desc": "Fictional-UI instrument panel in steel blue: hairlines, square corners, monospace uppercase labels, corner brackets.",
   "font": {"ui": "plex-mono", "mono": "plex-mono", "size": 12, "size_small": 11, "size_title": 13},
   "color": {
-    "bg": "#06080a", "surface1": "#0b0f12", "surface2": "#0e1417", "surface3": "#12191d", "raised": "#163034",
-    "border": "#1d3a3e", "text": "#cfe9e6", "text2": "#7fa5a1", "text3": "#557370",
-    "accent": "#43e6d3", "on_accent": "#031412", "good": "#5fd38a", "warn": "#f2b84b", "bad": "#f25a50"
+    "bg": "#06080b", "surface1": "#0b0f14", "surface2": "#0e131a", "surface3": "#121922", "raised": "#1a2a3c",
+    "border": "#223548", "text": "#d3e0ec", "text2": "#8ba3ba", "text3": "#5b7186",
+    "accent": "#7ea8d4", "on_accent": "#07111c", "good": "#5fd38a", "warn": "#f2b84b", "bad": "#f25a50"
   },
   "shape": {"radius": 0, "radius_control": 0, "border_width": 1, "gap": 0, "padding": 12, "control_height": 28},
   "depth": {"shadow_size": 0, "shadow_color": "#00000000"},

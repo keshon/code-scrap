@@ -65,12 +65,13 @@ Mouse and keys come from a keymap (`config/keymaps/*.json`, picked in **Settings
 | `Backspace` | select and fly to the parent |
 | `Esc` | close settings / clear search |
 | `Ctrl+,` | settings |
+| `F12` | diagnostics overlay (frame time, tile and text streaming) |
 
 The *Classic* keymap keeps the old scheme: left drag pans, right drag orbits, `Home` frames all.
 
 ### Settings and presets
 
-Every tunable (UI scale and theme, camera, labels, code text, highlight and arc colors, budgets, importance weights, git window) is described in `config/settings.schema.json`; the settings panel is generated from it. Changes apply live and are saved to the Godot user folder. **Presets** (`config/presets/*.json`, plus your own via *Save as…*) load whole sets of values. Themes are token files in `config/themes/`.
+Every tunable (UI scale and theme, camera, labels, code text, highlight and arc colors, budgets, importance weights, git window) is described in `config/settings.schema.json`; the settings panel is generated from it. Changes apply live and are saved to the Godot user folder. **Presets** (`config/presets/*.json`, plus your own via *Save as…*) load whole sets of values. Themes are token files in `config/themes/`. The viewer–server protocol is documented in [docs/protocol.md](docs/protocol.md).
 
 ### Lenses (toolbar)
 

@@ -12,22 +12,27 @@ import (
 
 func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
+// Protocol is the wire protocol version (docs/protocol.md). Bump it on any
+// incompatible change to a message or binary frame.
+const Protocol = 2
+
 func hello(st *state) map[string]any {
 	m := st.m
 	return map[string]any{
-		"op":      "hello",
-		"gen":     st.gen,
-		"root":    m.Root,
-		"name":    m.Nodes[0].Name,
-		"world":   rect(m.World),
-		"tilePx":  tile.Px,
-		"maxZ":    tile.MaxZ,
-		"precise": st.precise,
-		"stats":   m.Stats,
-		"maxTop":  m.Nodes[0].MaxTop,
-		"view":    m.View,
-		"git":     m.GitTime != 0,
-		"metrics": codemap.Metrics,
+		"op":       "hello",
+		"protocol": Protocol,
+		"gen":      st.gen,
+		"root":     m.Root,
+		"name":     m.Nodes[0].Name,
+		"world":    rect(m.World),
+		"tilePx":   tile.Px,
+		"maxZ":     tile.MaxZ,
+		"precise":  st.precise,
+		"stats":    m.Stats,
+		"maxTop":   m.Nodes[0].MaxTop,
+		"view":     m.View,
+		"git":      m.GitTime != 0,
+		"metrics":  codemap.Metrics,
 		"text": map[string]any{
 			"font":      st.renderer.Atlas.Font,
 			"colChars":  codemap.ColChars,
@@ -213,10 +218,10 @@ func search(st *state, q string, page, size int) map[string]any {
 //	u32 nl         labels
 //	nl × { i32 id, u8 kind, f32 x, y, w, h, top, u16 len, bytes }
 //	u32 nb         text blocks
-//	nb × { i32 file, u16 col, u16 seg, u16 rows, f32 x, y, w, h, top }
+//	nb × { i32 file, u16 col, u16 seg, u16 rows, f32 x, y, w, h, top, u32 key }
 func encodeTile(st *state, k tile.Key, is3D bool) []byte {
 	b := tile.BoxTile(st.m, k, is3D)
-	size := 20 + 4 + len(b.Instances)*4 + len(b.IDs)*4 + 4 + 4 + len(b.Blocks)*30
+	size := 20 + 4 + len(b.Instances)*4 + len(b.IDs)*4 + 4 + 4 + len(b.Blocks)*34
 	for _, l := range b.Labels {
 		size += 4 + 1 + 20 + 2 + len(l.Text)
 	}
@@ -262,13 +267,14 @@ func encodeTile(st *state, k tile.Key, is3D bool) []byte {
 		for _, f := range [5]float32{bl.X, bl.Y, bl.W, bl.H, bl.Top} {
 			buf = le.AppendUint32(buf, math.Float32bits(f))
 		}
+		buf = le.AppendUint32(buf, bl.Key)
 	}
 	return buf
 }
 
 // Text block frame:
 //
-//	u8 type (3), u8 0, u16 col, i32 file, u16 seg, u16 rows, u32 gen
+//	u8 type (3), u8 0, u16 col, i32 file, u16 seg, u16 rows, u32 gen, u32 key
 //	RGBA8 x texW*rows   premultiplied syntax color
 //	RG8   x texW*rows   atlas cell per character
 func encodeText(st *state, k textKey) []byte {
@@ -277,13 +283,14 @@ func encodeText(st *state, k textKey) []byte {
 		return nil
 	}
 	le := binary.LittleEndian
-	buf := make([]byte, 0, 16+len(color)+len(glyphs))
+	buf := make([]byte, 0, 20+len(color)+len(glyphs))
 	buf = append(buf, 3, 0)
 	buf = le.AppendUint16(buf, uint16(k.col))
 	buf = le.AppendUint32(buf, uint32(k.file))
 	buf = le.AppendUint16(buf, uint16(k.seg))
 	buf = le.AppendUint16(buf, uint16(rows))
 	buf = le.AppendUint32(buf, st.gen)
+	buf = le.AppendUint32(buf, st.renderer.TextKey(k.file, k.col, k.seg))
 	buf = append(buf, color...)
 	return append(buf, glyphs...)
 }

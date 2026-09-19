@@ -9,6 +9,8 @@ render_mode unshaded, cull_back, depth_draw_opaque;
 uniform float tile_scale = 1.0;   // render units per tile edge
 uniform float level = 0.0;        // tile zoom level
 uniform vec3 light_dir = vec3(0.45, 0.8, 0.3);
+global uniform float scrap_line_px;       // outline width, physical px
+global uniform float scrap_line_min_box;  // boxes smaller than this: no outline
 
 varying flat vec4 v_custom;
 varying flat vec4 v_hue;
@@ -53,7 +55,10 @@ void fragment() {
 		if ((edges & 4) != 0) e = min(e, far.x);
 		if ((edges & 8) != 0) e = min(e, far.y);
 		float true_px = v_custom.w / d.x;
-		float line = (1.0 - smoothstep(0.55, 1.45, e)) * smoothstep(3.0, 9.0, true_px);
+		// perspective lines cannot snap to pixels: a 1 px antialiased ramp
+		float w = max(scrap_line_px, 1.0);
+		float line = (1.0 - smoothstep(w - 0.45, w + 0.45, e))
+			* smoothstep(scrap_line_min_box * 0.5, scrap_line_min_box, true_px);
 		float big = smoothstep(8.0, 90.0, true_px);
 		if (kind > 1.5) {
 			if (line < 0.35) {

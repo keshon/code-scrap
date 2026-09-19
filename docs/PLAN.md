@@ -1,6 +1,6 @@
 # Polish plan
 
-Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1 done, theme A (Calm) first
+Status: approved · 2026-09-19 · baseline commit `d18af10` · Phase 1–2 done, theme A (Calm) first
 
 This plan turns the prototype into a tool: a data-driven core, a real UI shell, and a viewport that reads well. It covers the 20 review points from 2026-09-19. The phases are ordered so that each one builds on the previous: first the foundations everything else plugs into, then fixes, then the shell, then viewport polish.
 
@@ -45,6 +45,24 @@ Everything later hangs off these, so they come first.
 ---
 
 ## Phase 2 — Stability, correctness, cleanup (points 3, 8, 16)
+
+> **Done (2026-09-19).**
+> - **Flicker:**
+>   - Text blocks are content-keyed (`TextKey` = path + layout + place, protocol v2), so a new generation keeps loaded text.
+>   - Shown blocks get a 1.5× priority bonus at the budget cutoff, and blocks fade in and out over 150 ms.
+>   - Missing tiles fall back to loaded ancestors *or* children.
+>   - The 2D level has hysteresis.
+>   - Diagnostics HUD on F12.
+> - **Lines:** 2D outlines snap to pixels with an exact width. Line widths, the smallest outlined box and a nesting tone are settings.
+> - **Cleanup:**
+>   - `main.gd` split into `Toolbar`, `StatusBar`, `Inspector`, `SearchPanel`, `Hud` and `SettingsPanel` (`scripts/ui/`), plus `TestDriver`.
+>   - Shared tile fallback and label placement moved to `ViewCommon`; `_code_mat` and `SCRAP_DEBUG` removed.
+>   - `docs/protocol.md` added, versioned by `hello.protocol`.
+>   - Fixture tests for classification, secrets, layout, imports, calls, importance weights, search and text-key stability.
+> - **Deferred:**
+>   - One server `Options` type: `View` now carries the weights and the git window sits on `Server`, so there's little left to gain.
+>   - Lens descriptors from the server: moved to Phase 3 with point 14.
+>   - Tile cross-fades: child/ancestor fallback removed the visible holes, so they may not be needed; the HUD will tell.
 
 ### 2.1 Flicker (point 16): root causes found in code
 | Cause | Where | Fix |

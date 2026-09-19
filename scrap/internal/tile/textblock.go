@@ -1,6 +1,7 @@
 package tile
 
 import (
+	"hash/fnv"
 	"unicode/utf8"
 
 	"github.com/keshon/code-scrap/scrap/internal/codemap"
@@ -22,6 +23,31 @@ type Block struct {
 	Rows       uint16 // lines in this block
 	X, Y, W, H float32
 	Top        float32 // roof height of the file (3D)
+	Key        uint32  // content key, stable across generations (see TextKey)
+}
+
+// TextKey identifies a text block's content independently of node ids,
+// which change whenever the map is rebuilt: the file path, its column
+// layout and the block's place in it. Equal keys mean equal textures, so
+// viewers keep text they already have when a new generation arrives.
+func TextKey(f *codemap.File, col, seg int32) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(f.Path))
+	var b [16]byte
+	for i, v := range [4]int32{f.Rows, f.Lines, col, seg} {
+		b[i*4], b[i*4+1], b[i*4+2], b[i*4+3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24)
+	}
+	h.Write(b[:])
+	return h.Sum32()
+}
+
+// TextKey returns the content key of a block of a file node (0 if none).
+func (r *Renderer) TextKey(fileNode int32, col, seg int) uint32 {
+	m := r.Map
+	if fileNode < 0 || int(fileNode) >= len(m.Nodes) || m.Nodes[fileNode].Kind != codemap.KindFile {
+		return 0
+	}
+	return TextKey(&m.Files[m.Nodes[fileNode].File], int32(col), int32(seg))
 }
 
 // blocks lists the text blocks of file f that intersect the tile.
@@ -48,6 +74,7 @@ func (b *Boxes) blocks(m *codemap.Map, n *codemap.Node, f *codemap.File, tr code
 				File: f.Node, Col: uint16(c), Seg: uint16(seg), Rows: uint16(rows),
 				X: float32((x - tr.X) * inv), Y: float32((y - tr.Y) * inv),
 				W: float32(w * inv), H: float32(h * inv), Top: float32(n.Top * inv),
+				Key: TextKey(f, c, seg),
 			})
 		}
 	}

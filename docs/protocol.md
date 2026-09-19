@@ -1,0 +1,142 @@
+# scrap wire protocol
+
+Version **2** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+
+- **Text frames** carry JSON control messages.
+- **Binary frames** carry geometry, text textures and the font atlas.
+
+All binary values are little endian. Any incompatible change to a message or frame bumps the version, both in `scrap/internal/server/api.go` (`Protocol`) and in each viewer (`ScrapClient.PROTOCOL`). A viewer that sees a different version says so in its status bar.
+
+History:
+
+| Version | Change |
+|---|---|
+| 2 | Text blocks carry a content key (`u32 key`) in tile frames and text frames. `hello.protocol` added. `options` accepts `weights` and `gitSince`. |
+| 1 | Initial (unversioned). |
+
+## Concepts
+
+- **World:** the map lives in world units. The root rectangle is `hello.world` = `[x, y, w, h]`, about `[0, 0, 1, 0.625]`. Heights (3D) use the same units.
+- **Tiles:** a quadtree over the unit square. Tile `(z, x, y)` covers `[x/2^z, y/2^z, 1/2^z, 1/2^z]` and is drawn at about `hello.tilePx` pixels. `z ≤ hello.maxZ`.
+- **Generation (`gen`):** each rebuilt map (fast pass → precise pass, git history loaded, lens change, folder opened) gets a new `gen`, announced by a fresh `hello`.
+  - Node ids are only valid within one generation.
+  - Requests carry the `gen` they were made for; the server drops work for older generations.
+- **Text blocks:** one column of a file's text layout, at most `hello.text.blockRows` lines, drawn on the GPU. A block's `key` is a hash of path + layout + place. It stays the same across generations whenever the texture would be identical, so viewers keep text they already have.
+
+## Requests (viewer → server)
+
+Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
+
+| op | fields | reply |
+|---|---|---|
+| `hello` | — | `hello` |
+| `tiles` | `gen`, `dim` (2 flat · 3 city), `keys: [[z, x, y], …]` in priority order | binary tile frames. The list **replaces** the pending queue. |
+| `texts` | `gen`, `texts: [[fileNode, col, seg], …]` | binary text frames. The list replaces the pending text queue. Tiles go first. |
+| `font` | — | one binary font-atlas frame |
+| `node` | `node` | `node` |
+| `pick` | `x`, `y` (world), `scale` (px per world unit) | `pick` |
+| `pickRay` | `ray: [ox, oy, oz, dx, dy, dz]` (world units, Y up) | `pick` with `t` (ray distance) |
+| `heights` | `pts: [[x, y], …]` | `{"op": "heights", "h": [roof height, …]}` |
+| `search` | `q` (symbol-name prefix), `page`, `size` (≤ 500) | `search` |
+| `edges` | `node` | relations: imports (file level) |
+| `calls` | `node` | relations: syntax-level call graph |
+| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `gitSince` | no reply. The map rebuilds and a new `hello` follows when anything changed. |
+| `open` | `path` | new `hello` once indexed, or `{"op": "error", "error": …}` |
+
+## Messages (server → viewer)
+
+### `hello`
+
+```json
+{
+  "op": "hello", "protocol": 2, "gen": 3,
+  "root": "D:/repo", "name": "repo",
+  "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
+  "precise": true, "git": true,
+  "stats": {"Files": 18303, "Lines": 1849427, "...": "..."},
+  "view": {"height": "depth", "color": "area", "importance": false, "weights": {}},
+  "metrics": ["lines", "complexity", "functions", "churn", "age", "authors"],
+  "text": {"font": "consola.ttf", "colChars": 100, "blockRows": 4096, "texW": 128}
+}
+```
+
+The server sends it on connect and after every rebuild.
+
+### `progress`
+
+`{"op": "progress", "pass": "fast"|"precise"|"git", "phase": …, "done": n, "total": n}`
+
+This is broadcast while indexing. `done == total` ends a phase.
+
+### `node`
+
+The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lines`, `bytes`, `children`, `descendants`, `rect`, `top` and `line`. Depending on the node it also carries:
+
+- files and scopes: `lang`, `precise`, `classes`;
+- files: `fileMetrics` (`functions`, `maxComplexity`, and when git is loaded `commits`, `authors`, `lastChange`);
+- scopes: `scope` (the kind);
+- function scopes: `metrics` (`complexity`, `params`, `nesting`, `lines`).
+
+### `pick`
+
+`node` (−1 = nothing) and `line` (file line under the point, or −1). When a node was hit, it also carries `name`, `kind`, `path`, `rect`, `top`, and `lineRect` or `t`.
+
+### `search`
+
+`q`, `page`, `total`, `more`, `ms`, `files` and `hits`:
+
+- `files: [[x, y, w, h, top], …]` lists every file with a hit.
+- `hits: [{node, fileNode, path, line, name, kind, rect, top}, …]`: `rect` is the line's rectangle.
+
+### Relations (`edges`, `calls`)
+
+`node`, `out: [[from, to], …]`, `in: [[from, to], …]`, `outTotal`, `inTotal` and `nodes: {"id": [x, y, w, h, top]}`. `nodes` gives the geometry of every endpoint, so arcs draw without further requests. Each list is capped at 2000 edges.
+
+## Binary frames
+
+The first byte is the frame type.
+
+### 1 / 2: box tile (2D / 3D)
+
+```
+u8  type (1 = 2D, 2 = 3D)
+u8  z
+u16 flags (reserved, 0)
+i32 x, i32 y
+u32 gen
+u32 n                        boxes
+f32 × 16n (2D) | 20n (3D)    MultiMesh instance buffer (TRANSFORM_2D|3D + color + custom)
+i32 × n                      node ids
+u32 nl                       labels
+nl × { i32 id, u8 kind, f32 x, y, w, h, top, u16 len, utf8 × len }
+u32 nb                       text blocks
+nb × { i32 file, u16 col, u16 seg, u16 rows, f32 x, y, w, h, top, u32 key }
+```
+
+- Coordinates are tile-local (0..1).
+- Instance custom data = `(edge mask, kind, depth, trueMin / pieceWidth)`:
+  - the edge mask marks the box's real edges in this tile (1 left, 2 top, 4 right, 8 bottom);
+  - kind 0 is a directory, 1 a file, 2 a scope.
+- Label kinds are the same as box kinds.
+
+### 3: text block
+
+```
+u8  type (3), u8 0
+u16 col
+i32 file
+u16 seg
+u16 rows
+u32 gen
+u32 key
+RGBA8 × texW·rows    premultiplied syntax color × "has a glyph" (mipmapped by the viewer)
+RG8   × texW·rows    glyph atlas cell per character (u16)
+```
+
+### 4: font atlas
+
+```
+u8 type (4), u8 0
+u16 cols, rows, cellW, cellH
+L8 × (cols·cellW) × (rows·cellH)   glyph coverage
+```

@@ -21,6 +21,7 @@ uniform float rows = 1.0;
 uniform float col_chars = 100.0;
 uniform float tex_w = 128.0;
 uniform vec2 atlas_grid = vec2(32.0, 14.0);
+uniform float fade = 1.0;  // block fade in/out (premultiplied: scales all)
 
 vec4 code_text(vec2 uv) {
 	vec2 p = vec2(uv.x * col_chars, uv.y * rows);  // (character, line)
@@ -53,5 +54,5 @@ vec4 code_text(vec2 uv) {
 			glyph = vec4(c.rgb, 1.0) * cov;
 		}
 	}
-	return mix(dash, glyph, t);
+	return mix(dash, glyph, t) * fade;
 }
