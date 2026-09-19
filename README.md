@@ -28,7 +28,7 @@ The viewers only stream tiles, draw them, and handle the UI.
 
 ## Run
 
-Requires Go 1.26+ and Godot 4.7.
+Requires Go 1.26+ and Godot 4.7. On Windows, `build-n-run.bat [repo-path]` builds the server and opens the viewer (set `GODOT` to override the Godot path). Or step by step:
 
 ```bash
 cd scrap && go build -o bin/scrap.exe ./cmd/scrap

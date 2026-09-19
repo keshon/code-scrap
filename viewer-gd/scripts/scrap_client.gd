@@ -22,6 +22,8 @@ var _server_pid := -1
 var _retry_at := 0.0
 var _attempts := 0
 var _connect_started := 0.0
+var _repo_explicit := false
+var _open_sent := false
 
 
 func _ready() -> void:
@@ -36,6 +38,7 @@ func _parse_args() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--repo="):
 			repo = a.substr(7)
+			_repo_explicit = true
 		elif a.begins_with("--scrap="):
 			scrap_exe = a.substr(8)
 		elif a.begins_with("--url="):
@@ -134,11 +137,20 @@ func _on_text(s: String) -> void:
 		return
 	match data.get("op", ""):
 		"hello":
+			# a server left over from another session may be mapping a
+			# different folder: ask it to switch to ours
+			if _repo_explicit and not _open_sent and _norm(data.get("root", "")) != _norm(repo):
+				_open_sent = true
+				request("open", {"path": repo})
 			hello.emit(data)
 		"progress":
 			progress.emit(data)
 		_:
 			reply.emit(int(data.get("id", 0)), data)
+
+
+func _norm(p: String) -> String:
+	return p.replace("\\", "/").trim_suffix("/").to_lower()
 
 
 func _on_binary(b: PackedByteArray) -> void:
