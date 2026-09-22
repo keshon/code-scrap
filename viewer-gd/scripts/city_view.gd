@@ -1094,6 +1094,7 @@ func _draw_labels() -> void:
 	var min_box: float = Settings.get_value("labels.min_box_px")
 	var fs: int = Settings.get_value("labels.font_size")
 	var walls: bool = Settings.get_value("labels.dirs_on_walls")
+	var mid_roof: bool = Settings.get_value("labels.files_mid_roof")
 	var used := {}   # wall labels shown this frame (id -> true)
 	for key: Vector3i in _tiles:
 		var rec: Rec = _tiles[key]
@@ -1112,21 +1113,37 @@ func _draw_labels() -> void:
 			var s0 := _unproject(p0)
 			var s1 := _unproject(p1)
 			var w := s0.distance_to(s1)
-			if w < min_box or not view.has_point(s0):
+			if w < min_box:
+				continue
+			# the box's top edge, not one of its corners: zoomed in, both
+			# corners leave the screen while the box (and its wall sign)
+			# still fill it
+			if not view.grow(64.0).intersects(Rect2(s0, Vector2.ZERO).expand(s1)):
 				continue
 			var kind := int(rec.label_kinds[i])
 			if kind == 0 and walls and _wall_label(id, rec, j, fs, used):
 				continue
 			# anchored at the middle of the box's top edge, on its own roof:
 			# the label is visible exactly when that roof is
+			# files: on the roof's header strip, or in the middle of the roof
+			var along := 0.0
+			if kind == 1:
+				along = rec.label_data[j + 3] * 0.5 if mid_roof 					else minf(rec.label_data[j + 2], rec.label_data[j + 3]) * 0.01
 			var at := _world_to_render(rec.label_data[j] + rec.label_data[j + 2] * 0.5, rec.label_data[j + 4],
-				rec.label_data[j + 1] + (rec.label_data[j + 3] * 0.5 if kind == 1 else 0.0))
+				rec.label_data[j + 1] + along)
 			if _cam.is_position_behind(at):
 				continue
 			var sa := _unproject(at)
+			if not view.grow(64.0).has_point(sa):
+				continue
 			var lfs: int = fs if kind == 0 else max(fs - 1, 8)
+			# folders sit just above their top edge; file names are centered on
+			# the header strip of their roof, where they read as its title
+			var lift := lfs + 6.0 if kind == 0 else (lfs + 5.0) * 0.5
+			if kind == 1 and mid_roof:
+				lift = (lfs + 5.0) * 0.5
 			var c := {"id": id, "prio": w, "kind": kind, "color": rec.label_colors[i], "text": rec.label_texts[i],
-				"max_w": w - 8.0, "pos": sa - Vector2(0, lfs + 6), "center": true, "size": lfs, "at": at}
+				"max_w": w - 8.0, "pos": sa - Vector2(0, lift), "center": true, "size": lfs, "at": at}
 			if kind == 1:
 				# when a folder's name takes the spot, step onto the roof, away
 				# from the edge the name sits on (which way that is on screen

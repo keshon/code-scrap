@@ -17,7 +17,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 8
+const Protocol = 9
 
 func hello(st *state) map[string]any {
 	m := st.m
@@ -154,6 +154,9 @@ func nodeInfo(st *state, id int32) map[string]any {
 			}
 		}
 	}
+	if n.Kind == codemap.KindDir {
+		out["header"] = rect(m.Header(id))
+	}
 	if c := clusterInfo(m, id); c != nil {
 		out["cluster"] = c
 	}
@@ -231,8 +234,41 @@ func pick(st *state, x, y, scale float64) map[string]any {
 			f := &st.m.Files[n.File]
 			out["lineRect"] = rect(f.LineRect(line))
 		}
+		boxFacts(st.m, id, out)
+		// the folder the hovered file or scope lives in, for context
+		if n.Kind != codemap.KindDir {
+			d := n.Parent
+			for d >= 0 && st.m.Nodes[d].Kind != codemap.KindDir {
+				d = st.m.Nodes[d].Parent
+			}
+			if d > 0 {
+				dn := &st.m.Nodes[d]
+				out["folder"] = map[string]any{"node": d, "name": dn.Name, "rect": rect(dn.Rect), "header": rect(st.m.Header(d))}
+			}
+		}
 	}
 	return out
+}
+
+// boxFacts adds what hover tooltips and selection frames need: the
+// header band of a folder, and its file and folder counts.
+func boxFacts(m *codemap.Map, id int32, out map[string]any) {
+	n := &m.Nodes[id]
+	out["lines"] = n.Lines
+	if n.Kind != codemap.KindDir {
+		return
+	}
+	out["header"] = rect(m.Header(id))
+	files, dirs := 0, 0
+	for i := id + 1; i < n.End; i++ {
+		switch m.Nodes[i].Kind {
+		case codemap.KindFile:
+			files++
+		case codemap.KindDir:
+			dirs++
+		}
+	}
+	out["files"], out["dirs"] = files, dirs
 }
 
 // relations answers "what does this node import, and who imports it"

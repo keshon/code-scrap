@@ -73,10 +73,11 @@ void fragment() {
 			fill += vec3(scrap_roof_tone) * big;
 		}
 		if (scrap_headers > 0.5) {
-			// folders are told apart by their header band and padding, files
-			// by dark seams: no bright outlines competing with the names
-			float seam = v_custom.y > 0.5 ? outline : 0.0;
-			COLOR = vec4(mix(fill, vec3(0.02, 0.022, 0.028), seam), 1.0);
+			// folders are told apart by their header band and a muted contour
+			// in their own color, files by dark seams: no bright outlines
+			// competing with the names
+			vec3 edge = v_custom.y > 0.5 ? vec3(0.02, 0.022, 0.028) : hue * 0.55;
+			COLOR = vec4(mix(fill, edge, outline), 1.0);
 		} else {
 			COLOR = vec4(mix(fill, hue * 0.95, outline), 1.0);
 		}

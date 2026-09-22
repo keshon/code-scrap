@@ -43,6 +43,7 @@ const SHADER_GLOBALS := {
 	"scopes.containers": ["scrap_scope_containers", "b"],
 	"look.light_strength": ["scrap_light_strength", "f"],
 	"look.contact": ["scrap_contact", "f"],
+	"look.bevel": ["scrap_bevel", "f"],
 	"look.light": ["scrap_flat", "e"],
 	"look.roof_fill": ["scrap_roof_fill", "e"],       # 0 auto, 1 dark, 2 colored
 	"look.headers": ["scrap_headers", "b"],

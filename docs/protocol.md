@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **8** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **9** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 9 | In 3D tiles, file labels carry the whole box rect too (folder labels already did), so viewers can place a name on the roof's header strip or its middle. |
 | 8 | `options.look.headers` (folder header bands). 2D tiles may carry kind-4 instances: a folder's header band, drawn after the folder and before its children; with headers on, folder labels span that band. |
 | 7 | `options.look = {order, algorithm, palette, lineNumbers}` replaces `stable`/`palette`. Text blocks start with a gutter (line numbers or padding): `hello.text.colChars` includes it, and text keys change with it. |
 | 6 | `overview` op (minimap). `options` accepts `stable` and `palette`. In 3D tiles, folder labels carry the whole box rect (for wall signs). |
@@ -57,7 +58,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 8, "gen": 3,
+  "op": "hello", "protocol": 9, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,
@@ -90,11 +91,11 @@ The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lin
 - scopes: `scope` (the kind);
 - function scopes: `metrics` (`complexity`, `params`, `nesting`, `lines`).
 
-`ancestors: [[id, name], …]` runs from the root down to the parent (for breadcrumbs). `cluster` appears once clusters are computed (in the background after each index or git load): for a file `{"of": {name, color, home, homePath, files}}`, `{"hub": true, color}` or `{"none": true}`; for a folder `{"parts": [{name, color, home, homePath, files, share} | {hub, color, share}, …], "spread", "clustered"}` — up to five clusters its files belong to, biggest share first.
+`ancestors: [[id, name], …]` runs from the root down to the parent (for breadcrumbs). Folders carry `header`, their header band rect. `cluster` appears once clusters are computed (in the background after each index or git load): for a file `{"of": {name, color, home, homePath, files}}`, `{"hub": true, color}` or `{"none": true}`; for a folder `{"parts": [{name, color, home, homePath, files, share} | {hub, color, share}, …], "spread", "clustered"}` — up to five clusters its files belong to, biggest share first.
 
 ### `pick`
 
-`node` (−1 = nothing) and `line` (file line under the point, or −1). When a node was hit, it also carries `name`, `kind`, `path`, `rect`, `top`, and `lineRect` or `t`.
+`node` (−1 = nothing) and `line` (file line under the point, or −1). When a node was hit, it also carries `name`, `kind`, `path`, `rect`, `top`, `lines`, and `lineRect` or `t`. Folders add `header` (their header band rect), `files` and `dirs` (counts of everything inside); files and scopes add `folder: {node, name, rect, header}`, the folder they live in (hover context and tooltips).
 
 ### `search`
 

@@ -242,6 +242,13 @@
           "desc": "Most labels drawn at once; bigger boxes win."
         },
         {
+          "id": "labels.files_mid_roof",
+          "type": "bool",
+          "default": false,
+          "label": "File names mid-roof (3D)",
+          "desc": "3D: print a file's name in the middle of its roof instead of on the header strip along its top edge."
+        },
+        {
           "id": "labels.min_box_px",
           "type": "int",
           "default": 34,
@@ -599,6 +606,16 @@
           "step": 0.05,
           "label": "Light strength",
           "desc": "Contrast between lit and shaded faces."
+        },
+        {
+          "id": "look.bevel",
+          "type": "float",
+          "default": 0.0,
+          "min": 0.0,
+          "max": 0.15,
+          "step": 0.01,
+          "label": "Bevel",
+          "desc": "3D: a chamfer shaded along every edge of every box (roofs included), as a share of its smallest side. Boxes that touch then part along a groove instead of a flat seam. 0 = off."
         },
         {
           "id": "look.contact",

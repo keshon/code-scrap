@@ -18,6 +18,8 @@ extends Node
 ##   --set=id:value,…  override settings for the run (nothing is saved)
 ##   --select=<path>   select a file or folder by path once connected (and fly to it)
 ##   --crumb=<n>       then open the n-th breadcrumb chevron menu
+##   --hover=fx,fy     2D: point the cursor at this fraction of the map view
+##                     (after --wait/2) and pick what is under it
 
 var shell: Node   # main.gd
 var args := {}
@@ -58,11 +60,20 @@ func _ready() -> void:
 			shell.search.focus()
 			shell.search.search(args.type), CONNECT_ONE_SHOT)
 	if args.has("select"):
+		# a moment after connecting, so --set options that re-lay the map
+		# out (and send a new hello) are in place first
 		client.hello.connect(func(_i):
+			await get_tree().create_timer(2.0).timeout
 			shell._pending = {"select": true, "fly": true}
 			shell._node_req = client.request("node", {"path": args.select}), CONNECT_ONE_SHOT)
 	if args.get("view", "") == "3d":
 		client.hello.connect(func(_i): _enter_3d(), CONNECT_ONE_SHOT)
+	if args.has("hover"):
+		var f := String(args.hover).split(",")
+		get_tree().create_timer(float(args.get("wait", 4)) * 0.5).timeout.connect(func():
+			var map = shell.map
+			map._last_mouse = Vector2(float(f[0]), float(f[1])) * map.size
+			map._send_pick())
 	if args.has("lens"):
 		_apply_lens(args.lens)
 	if args.has("rel"):

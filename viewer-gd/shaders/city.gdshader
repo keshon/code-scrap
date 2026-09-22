@@ -26,6 +26,7 @@ global uniform float scrap_specular;
 global uniform float scrap_gloss;
 global uniform float scrap_roof_diffuse;  // 0 all roofs, 1 selected only, 2 none
 global uniform float scrap_contact;
+global uniform float scrap_bevel;         // chamfer width, share of the box's smallest side
 global uniform float scrap_flat;          // 1 = no shading
 // selection and hover, in render space: box (x, z, w, h), roof height, tint
 global uniform vec4 scrap_sel_box;
@@ -39,7 +40,7 @@ global uniform vec4 scrap_hov_tint;
 
 varying flat vec4 v_custom;
 varying flat vec4 v_hue;
-varying flat vec4 v_dims;     // box size x, z (render units), shorter side on screen (px)
+varying flat vec4 v_dims;     // box size x, z (render units), shorter side on screen (px), height
 varying flat float v_sel;     // 1 = this piece belongs to the selected box
 varying flat float v_hov;
 varying vec3 v_local;         // position in the piece: x, z in render units, y = height 0..1
@@ -81,7 +82,7 @@ void vertex() {
 	float ppu = VIEWPORT_SIZE.y * abs(PROJECTION_MATRIX[1][1]) * 0.5 / max(distance(center, CAMERA_POSITION_WORLD), 1e-6);
 	// the whole box's shorter side (custom.w = true min / piece width), so
 	// pieces of a box cut by tiles match
-	v_dims = vec4(size.x, size.z, INSTANCE_CUSTOM.w * size.x * ppu, 0.0);
+	v_dims = vec4(size.x, size.z, INSTANCE_CUSTOM.w * size.x * ppu, size.y);
 	v_wnormal = NORMAL;   // the cube is axis aligned and not rotated
 	v_wpos = wp;
 	v_ring = NORMAL.y > 0.5 ? 2.0 : 0.0;
@@ -97,6 +98,40 @@ float diffuse(vec3 n, vec3 l) {
 	float lit = scrap_ambient + (1.0 - scrap_ambient) * max(dot(n, l), 0.0);
 	float avg = scrap_ambient + (1.0 - scrap_ambient) * 0.6;
 	return mix(1.0, lit / avg, scrap_light_strength);
+}
+
+// Chamfer along every edge of a face: how far inside the face this pixel
+// is (0 at an edge, 1 past the chamfer) and the normal a real chamfer
+// would have there. Boxes that touch then part along a shaded groove.
+float chamfer(bool roof, vec3 n, vec2 uv, out vec3 bn) {
+	bn = n;
+	if (scrap_bevel <= 0.0) {
+		return 1.0;
+	}
+	bool zface = abs(n.z) > 0.5;
+	vec2 fs = roof ? v_dims.xy : vec2(zface ? v_dims.x : v_dims.y, v_dims.w);
+	// measured on the box's footprint, and never more than half a wall
+	float bw = scrap_bevel * min(v_dims.x, v_dims.y);
+	if (!roof) {
+		bw = min(bw, 0.45 * v_dims.w);
+	}
+	if (bw <= 0.0) {
+		return 1.0;
+	}
+	vec2 d = min(uv, vec2(1.0) - uv) * fs;
+	float t = clamp(min(d.x, d.y) / bw, 0.0, 1.0);
+	vec3 outward;
+	if (roof) {
+		outward = d.x <= d.y ? vec3(uv.x < 0.5 ? -1.0 : 1.0, 0.0, 0.0)
+		                     : vec3(0.0, 0.0, uv.y < 0.5 ? -1.0 : 1.0);
+	} else if (d.y <= d.x) {
+		outward = vec3(0.0, uv.y < 0.5 ? -1.0 : 1.0, 0.0);   // bottom / top edge
+	} else {
+		vec3 tang = zface ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
+		outward = tang * (uv.x < 0.5 ? -1.0 : 1.0);
+	}
+	bn = normalize(mix(n, outward, 0.7 * (1.0 - t)));
+	return t;
 }
 
 float specular(vec3 n, vec3 l, vec3 v) {
@@ -119,6 +154,8 @@ void fragment() {
 	vec3 n = normalize(v_wnormal);
 	vec3 c;
 	float spec = 0.0;
+	vec3 bn;
+	float cham = chamfer(roof, n, UV, bn);
 	if (roof) {
 		int edges = int(v_custom.x + 0.5);
 		vec2 p = v_local.xy;                        // render units in the piece
@@ -157,14 +194,16 @@ void fragment() {
 			c = mix(base, hue, line * 0.9);
 			bool diffuse_only = scrap_roof_diffuse < 0.5 || (scrap_roof_diffuse < 1.5 && v_sel > 0.5);
 			if (!diffuse_only) {
-				spec = specular(n, l, v);
+				spec = specular(bn, l, v);
 			}
+			// the chamfer catches the light where a flat roof would not
+			c *= mix(diffuse(bn, l) * 0.82, 1.0, cham);
 		}
 	} else {
-		c = hue * 0.55 * diffuse(n, l);
+		c = hue * 0.55 * diffuse(bn, l) * mix(0.9, 1.0, cham);
 		// contact shading: darker toward the base
 		c *= mix(1.0 - scrap_contact, 1.0, smoothstep(0.0, 0.45, v_local.z));
-		spec = specular(n, l, v);
+		spec = specular(bn, l, v);
 	}
 	c += vec3(spec);
 	// selection / hover tint: the whole box glows

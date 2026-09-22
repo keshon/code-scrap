@@ -64,6 +64,7 @@ var _pick_at := 0.0
 var _last_mouse := Vector2.ZERO
 var hover := {}                    # last pick reply
 var selection_rect := []           # world [x,y,w,h]
+var selection_header := []         # the selected folder's header band (folder headers mode)
 var selection_id := -1
 
 # search overlays
@@ -591,13 +592,14 @@ func _click_select() -> void:
 	if hover.is_empty() or int(hover.get("node", -1)) < 0:
 		deselect()
 		return
-	select_node(int(hover.node), hover.rect)
+	select_node(int(hover.node), hover.rect, hover.get("header", []))
 
 
 func deselect() -> void:
 	if selection_id < 0 and selection_rect.is_empty():
 		return
 	selection_id = -1
+	selection_header = []
 	selection_rect = []
 	current_hit = []
 	selected.emit(-1)
@@ -617,9 +619,10 @@ func set_selection(id: int, rect: Array) -> void:
 	_overlay.queue_redraw()
 
 
-func select_node(id: int, rect: Array) -> void:
+func select_node(id: int, rect: Array, header := []) -> void:
 	selection_id = id
 	selection_rect = rect
+	selection_header = header
 	selected.emit(id)
 	_overlay.queue_redraw()
 
@@ -673,14 +676,31 @@ func _draw_overlay() -> void:
 	if Settings.get_value("viewport.arcs"):
 		_draw_arcs()
 		_draw_arc_tip()
+	var headers: bool = Settings.get_value("look.headers")
+	var show_hover: bool = hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover") 		and Settings.get_value("highlight.hover_style") != "off"
+	if headers:
+		# header bands light up under the names: the selected folder's in
+		# the selection color, the hovered one (or the hovered file's
+		# folder) a little
+		if selection_header.size() == 4:
+			o.draw_rect(rect_to_screen(selection_header), Color(sel_c, 0.55))
+		if show_hover:
+			var hh: Array = hover.get("header", hover.get("folder", {}).get("header", []))
+			if hh.size() == 4 and hh != selection_header:
+				o.draw_rect(rect_to_screen(hh), Color(1, 1, 1, 0.18))
 	if Settings.get_value("viewport.labels"):
 		_draw_labels()
+	if headers and show_hover and hover.has("folder"):
+		# the hovered file's folder: where am I?
+		_outline(rect_to_screen(hover.folder.rect), Color(1, 1, 1, 0.35), 1.0)
 	# hover + selection
 	# on the flat map "outline" and "xray" look the same: nothing stands in front
-	if hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover") 			and Settings.get_value("highlight.hover_style") != "off":
+	if show_hover:
 		var hr := rect_to_screen(hover.rect)
 		o.draw_rect(hr, Color(hover_c, 0.06))
-		_outline(hr, Color(hover_c, 0.7), Settings.get_value("lines.hover_width"))
+		# folder headers: a white frame, as bright as the bands are colorful
+		var frame := Color(1, 1, 1, 0.9) if headers else Color(hover_c, 0.7)
+		_outline(hr, frame, Settings.get_value("lines.hover_width") + (1.0 if headers else 0.0))
 		if hover.has("lineRect"):
 			o.draw_rect(rect_to_screen(hover.lineRect), Color(hover_c, 0.12))
 	if selection_rect.size() == 4:
@@ -689,8 +709,10 @@ func _draw_overlay() -> void:
 		var style: String = Settings.get_value("highlight.style")
 		if style == "tint" or style == "both":
 			o.draw_rect(sr, Color(sel_c, float(Settings.get_value("highlight.fill")) * 0.6))
-		if style == "silhouette" or style == "both":
+		if style == "silhouette" or style == "both" or headers:
 			_outline(sr, sel_c, Settings.get_value("lines.selected_width"))
+	if headers and show_hover and _arc_hover < 0:
+		_draw_hover_tip()
 
 
 func _draw_labels() -> void:
@@ -842,6 +864,36 @@ func _draw_arcs() -> void:
 				o.draw_primitive(PackedVector2Array([tip, tip - dir * s + side * s * 0.45, tip - dir * s - side * s * 0.45]),
 					PackedColorArray([ac, ac, ac]), PackedVector2Array())
 		o.draw_circle(pts[0], 1.5 + w * 0.5, ca)
+
+
+## Folder headers mode: what is under the cursor, like a file manager's
+## tooltip — name, size, and for folders what they hold.
+func _draw_hover_tip() -> void:
+	var fs: int = Settings.get_value("labels.font_size")
+	var bold := Style.font("ui", 600)
+	var font := Style.font("ui", 500)
+	var rows := [[str(hover.get("name", "")), bold, Style.color("text")]]
+	var facts := "%s lines" % Fmt.num(hover.get("lines", 0))
+	if hover.get("kind", "") == "dir":
+		facts += " · %s files · %s folders" % [Fmt.num(hover.get("files", 0)), Fmt.num(hover.get("dirs", 0))]
+	rows.append([facts, font, Style.color("text2")])
+	if hover.has("folder"):
+		rows.append(["in " + str(hover.folder.name), font, Style.color("text3")])
+	rows.append(["double-click to zoom", font, Style.color("text3")])
+	var w := 0.0
+	for r in rows:
+		w = maxf(w, (r[1] as Font).get_string_size(r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
+	var lh := fs + 5.0
+	var box := Rect2(_last_mouse + Vector2(16, 14), Vector2(w + 16, lh * rows.size() + 8))
+	if box.end.x > size.x:
+		box.position.x = _last_mouse.x - box.size.x - 10
+	if box.end.y > size.y:
+		box.position.y = _last_mouse.y - box.size.y - 10
+	_overlay.draw_rect(box, Color(Style.color("raised"), 0.96))
+	_outline(box, Color(Style.color("text3"), 0.5), 1.0)
+	for i in rows.size():
+		var r: Array = rows[i]
+		_overlay.draw_string(r[1], box.position + Vector2(8, 4 + lh * i + fs), r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, r[2])
 
 
 ## Tooltip for the arc under the cursor: its ends and what kind it is.

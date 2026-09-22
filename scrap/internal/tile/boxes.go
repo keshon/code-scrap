@@ -79,8 +79,10 @@ func BoxTile(m *codemap.Map, k Key, is3D bool) *Boxes {
 		if !r.Intersects(tr) || r.W*scale < minBoxPx || r.H*scale < minBoxPx {
 			return
 		}
-		if id != 0 { // the root box is the canvas, not drawn
+		if id != 0 { // the root box is the canvas, not drawn…
 			b.add(m, id, r, tr, scale)
+		} else if m.View.Headers && !is3D {
+			b.header(m, id, tr, scale) // …but it has a header band like any folder
 		}
 		switch n.Kind {
 		case codemap.KindDir:
@@ -107,19 +109,32 @@ func (b *Boxes) add(m *codemap.Map, id int32, r, tr codemap.Rect, scale float64)
 	b.push(r, tr, c, float32(n.Kind), float32(n.Depth), n.Top, id)
 	headers := m.View.Headers && n.Kind == codemap.KindDir && !b.is3D
 	if headers {
-		// the folder's header band: its own instance, so tiles cutting
-		// through a header still paint it whole
-		if h := m.Header(id); h.H*scale >= 1 {
-			b.push(h, tr, c, KindHeader, float32(n.Depth), n.Top, id)
-		}
+		b.header(m, id, tr, scale)
+		return
 	}
-	if r.Min()*scale >= minLabelPx || (headers && m.Header(id).H*scale >= minHeaderLabelPx) {
+	if r.Min()*scale >= minLabelPx {
 		h := m.Header(id)
-		if b.is3D && n.Kind == codemap.KindDir {
-			// 3D folder labels get the whole box, so the viewer can print
-			// the name on the wall that faces the camera
+		if b.is3D {
+			// 3D labels get the whole box: folder names go on the wall that
+			// faces the camera, file names on the roof (header strip or
+			// middle, as the viewer is set)
 			h = r
 		}
+		b.label(id, uint8(n.Kind), c, h, n.Top, tr, n.Name)
+	}
+}
+
+// header adds a folder's header band — its own instance, so tiles cutting
+// through a header still paint it whole — and its name label spanning it.
+func (b *Boxes) header(m *codemap.Map, id int32, tr codemap.Rect, scale float64) {
+	n := &m.Nodes[id]
+	h := m.Header(id)
+	if h.H*scale < 1 {
+		return
+	}
+	c := BoxColor(m, n)
+	b.push(h, tr, c, KindHeader, float32(n.Depth), n.Top, id)
+	if h.H*scale >= minHeaderLabelPx {
 		b.label(id, uint8(n.Kind), c, h, n.Top, tr, n.Name)
 	}
 }

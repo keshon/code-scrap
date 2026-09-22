@@ -573,7 +573,7 @@ func _on_node(data: Dictionary) -> void:
 			if p.fly:
 				city.focus_rect(data.rect, float(data.top))
 		else:
-			map.select_node(nid, data.rect)
+			map.select_node(nid, data.rect, data.get("header", []))
 			if p.fly:
 				var t := map.fit_rect(data.rect)
 				map.fly_to(t[0], t[1], t[2])
