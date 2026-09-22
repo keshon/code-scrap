@@ -14,6 +14,8 @@ type Graph struct {
 	Edges []GraphEdge  `json:"edges"`
 	Stats GraphStats   `json:"stats"`
 	Opts  GraphOptions `json:"options"`
+
+	nodeOf map[int32]int32 // file index → graph node
 }
 
 type GraphNode struct {
@@ -24,6 +26,8 @@ type GraphNode struct {
 	Class   []string `json:"class,omitempty"` // test, data, vendored, minified
 	Commits int32    `json:"commits"`         // commits in the window touching the file
 	Decls   []string `json:"decls,omitempty"` // top-level scope names, capped
+
+	file int32 // index in Map.Files
 }
 
 // GraphEdge is directed for imports and calls (S uses T) and undirected for
@@ -60,7 +64,7 @@ var graphClasses = []struct {
 // plus co-change over history: one entry per commit listing the
 // repo-relative paths it touched.
 func (m *Map) Graph(history [][]string, o GraphOptions) *Graph {
-	g := &Graph{Root: m.Root, Opts: o}
+	g := &Graph{Root: m.Root, Opts: o, nodeOf: map[int32]int32{}}
 	gid := make([]int32, len(m.Nodes)) // map node → graph node, -1 = none
 	for i := range gid {
 		gid[i] = -1
@@ -71,7 +75,7 @@ func (m *Map) Graph(history [][]string, o GraphOptions) *Graph {
 		if f.Class.Has(ClassBinary | ClassAsset | ClassSecret) {
 			continue
 		}
-		n := GraphNode{ID: int32(len(g.Nodes)), Path: f.Path, Lines: f.Lines}
+		n := GraphNode{ID: int32(len(g.Nodes)), Path: f.Path, Lines: f.Lines, file: int32(i)}
 		if f.Lang != nil {
 			n.Lang = f.Lang.Name
 		}
@@ -90,6 +94,7 @@ func (m *Map) Graph(history [][]string, o GraphOptions) *Graph {
 		}
 		gid[f.Node] = n.ID
 		byPath[f.Path] = n.ID
+		g.nodeOf[int32(i)] = n.ID
 		g.Nodes = append(g.Nodes, n)
 	}
 

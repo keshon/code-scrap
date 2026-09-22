@@ -48,6 +48,9 @@ func hello(st *state) map[string]any {
 // legend describes what the colors mean under the current view: the areas
 // and their hues, or the metric ramp with its value quantiles.
 func legend(m *codemap.Map) map[string]any {
+	if m.View.Color == codemap.ColorCluster && m.Clusters != nil {
+		return clusterLegend(m)
+	}
 	if m.View.Color != "" && m.View.Color != codemap.ColorArea {
 		return map[string]any{
 			"kind":      "metric",
@@ -61,6 +64,26 @@ func legend(m *codemap.Map) map[string]any {
 		list = append(list, map[string]any{"node": a.Node, "name": a.Name, "color": tile.AreaColor(m, a.Hue), "lines": a.Lines})
 	}
 	return map[string]any{"kind": "area", "areas": list, "more": max(len(areas)-16, 0)}
+}
+
+// clusterLegend lists the clusters with their names and colors; each
+// entry's node is the cluster's home folder (to frame it).
+func clusterLegend(m *codemap.Map) map[string]any {
+	c := m.Clusters
+	const shown = 24
+	list := make([]map[string]any, 0, min(len(c.Clusters), shown))
+	for _, x := range c.Clusters[:min(len(c.Clusters), shown)] {
+		list = append(list, map[string]any{"node": x.Home, "name": x.Name, "color": tile.ClusterColor(x.Hue),
+			"lines": x.Lines, "files": x.Files, "home": m.Path(x.Home)})
+	}
+	none := 0 // text files only: media and binaries never join a cluster
+	for i, k := range c.Of {
+		if k == codemap.ClusterNone && !m.Files[i].Class.Has(codemap.ClassBinary|codemap.ClassAsset|codemap.ClassSecret) {
+			none++
+		}
+	}
+	return map[string]any{"kind": "cluster", "clusters": list, "more": max(len(c.Clusters)-shown, 0),
+		"hubs": len(c.Hubs), "unclustered": none, "hubColor": tile.HubColor, "noneColor": tile.NoneColor}
 }
 
 var classNames = []struct {

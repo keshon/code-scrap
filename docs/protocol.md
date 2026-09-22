@@ -72,7 +72,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 The server sends it on connect and after every rebuild.
 
 - **Lens:** `{id, short, long, desc, unit, high, needsGit}`. Viewers build their lens menus, descriptions and legend units from these, so a new metric needs no viewer change.
-- **Legend:** under a metric color lens it is `{"kind": "metric", "ramp": [[r, g, b] × 9], "quantiles": [p0, p25, p50, p75, p100]}`, with quantiles in the lens unit (null when no file has a value). Otherwise it lists up to 16 top-level areas, biggest first; `more` counts the rest.
+- **Legend:** under a metric color lens it is `{"kind": "metric", "ramp": [[r, g, b] × 9], "quantiles": [p0, p25, p50, p75, p100]}`, with quantiles in the lens unit (null when no file has a value). Under the cluster lens (`color: "cluster"`) it is `{"kind": "cluster", "clusters": [{"node", "name", "color", "files", "lines", "home"}, …], "more", "hubs", "unclustered", "hubColor", "noneColor"}`: up to 24 clusters, biggest first, each `node` being the cluster's home folder (the deepest one holding at least half its files). Otherwise it lists up to 16 top-level areas, biggest first; `more` counts the rest.
 
 ### `progress`
 

@@ -6,6 +6,7 @@ extends PanelContainer
 signal area_clicked(node: int)
 
 const MAX_AREAS := 6
+const MAX_CLUSTERS := 12
 
 var _box: VBoxContainer
 var _legend := {}       # hello.legend
@@ -76,6 +77,8 @@ func _rebuild() -> void:
 		return
 	if _legend.get("kind", "") == "metric":
 		_metric()
+	elif _legend.get("kind", "") == "cluster":
+		_clusters()
 	else:
 		_areas()
 	if _is3d and not _height.is_empty():
@@ -156,6 +159,31 @@ func _areas() -> void:
 		_box.add_child(_small("+%d more" % more))
 	_box.add_child(_swatch(Color(0.50, 0.52, 0.56), "binary / data (muted)"))
 	_box.add_child(_swatch(Color(0.52, 0.60, 0.58), "vendored / generated (dimmed)"))
+
+
+func _clusters() -> void:
+	var list: Array = _legend.get("clusters", [])
+	var n: int = min(list.size(), MAX_CLUSTERS)
+	for i in n:
+		var c: Dictionary = list[i]
+		var row := _swatch(Color(c.color[0], c.color[1], c.color[2]), str(c.name) if str(c.name) != "" else "cluster %d" % (i + 1))
+		row.tooltip_text = "%s files · %s lines
+mostly in %s · click to frame it" % [
+			Fmt.num(c.get("files", 0)), Fmt.num(c.get("lines", 0)), str(c.get("home", ""))]
+		row.mouse_filter = Control.MOUSE_FILTER_STOP
+		row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var id := int(c.node)
+		row.gui_input.connect(func(ev):
+			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+				area_clicked.emit(id))
+		_box.add_child(row)
+	var more: int = list.size() - n + int(_legend.get("more", 0))
+	if more > 0:
+		_box.add_child(_small("+%d smaller clusters" % more))
+	var hc: Array = _legend.get("hubColor", [0.96, 0.95, 0.90])
+	var nc: Array = _legend.get("noneColor", [0.30, 0.31, 0.34])
+	_box.add_child(_swatch(Color(hc[0], hc[1], hc[2]), "hub · imported by much of the code (%d)" % int(_legend.get("hubs", 0))))
+	_box.add_child(_swatch(Color(nc[0], nc[1], nc[2]), "unclustered (%s files)" % Fmt.num(_legend.get("unclustered", 0))))
 
 
 func _title(t: String) -> Label:

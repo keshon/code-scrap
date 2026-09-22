@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -81,12 +82,30 @@ func Walk(ctx context.Context, root, since string, fn func(c *Commit)) error {
 	return sc.Err()
 }
 
+// History is what the viewer needs from git: per-path statistics and the
+// paths each commit touched (for co-change).
+type History struct {
+	Stats   map[string]Stat `json:"stats"`
+	Commits [][]string      `json:"commits"` // newest first
+}
+
 // Read returns per-path statistics over the history Walk visits. Files
 // untouched in the window are absent.
 func Read(ctx context.Context, root, since string) (map[string]Stat, error) {
+	h, err := ReadHistory(ctx, root, since)
+	if err != nil {
+		return nil, err
+	}
+	return h.Stats, nil
+}
+
+// ReadHistory walks the history once for statistics and commit file lists.
+func ReadHistory(ctx context.Context, root, since string) (*History, error) {
 	stats := map[string]*Stat{}
 	authors := map[string]map[string]bool{}
+	var commits [][]string
 	err := Walk(ctx, root, since, func(c *Commit) {
+		commits = append(commits, slices.Clone(c.Files))
 		for _, p := range c.Files {
 			s := stats[p]
 			if s == nil {
@@ -105,11 +124,11 @@ func Read(ctx context.Context, root, since string) (map[string]Stat, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := make(map[string]Stat, len(stats))
+	h := &History{Stats: make(map[string]Stat, len(stats)), Commits: commits}
 	for p, s := range stats {
-		res[p] = *s
+		h.Stats[p] = *s
 	}
-	return res, nil
+	return h, nil
 }
 
 // Head returns the commit the repository's HEAD points at ("" if none).
@@ -121,34 +140,36 @@ func Head(ctx context.Context, root string) string {
 	return string(bytes.TrimSpace(out))
 }
 
-// ReadCached is Read with a cache in dir keyed by HEAD, the day and the
-// window: history only changes with new commits (and relative windows
+// ReadCached is ReadHistory with a cache in dir keyed by HEAD, the day and
+// the window: history only changes with new commits (and relative windows
 // with the date), so restarts skip the slow git log.
-func ReadCached(ctx context.Context, root, since, dir string) (map[string]Stat, bool, error) {
+func ReadCached(ctx context.Context, root, since, dir string) (*History, bool, error) {
 	head := Head(ctx, root)
 	if head == "" || dir == "" {
-		s, err := Read(ctx, root, since)
-		return s, false, err
+		h, err := ReadHistory(ctx, root, since)
+		return h, false, err
 	}
-	name := fmt.Sprintf("git-%s-%s-%x.json", head[:min(12, len(head))], time.Now().Format("20060102"), sha1.Sum([]byte(since)))
+	name := fmt.Sprintf("history-%s-%s-%x.json", head[:min(12, len(head))], time.Now().Format("20060102"), sha1.Sum([]byte(since)))
 	p := filepath.Join(dir, name)
 	if b, err := os.ReadFile(p); err == nil {
-		var s map[string]Stat
-		if json.Unmarshal(b, &s) == nil {
-			return s, true, nil
+		var h History
+		if json.Unmarshal(b, &h) == nil && h.Stats != nil {
+			return &h, true, nil
 		}
 	}
-	s, err := Read(ctx, root, since)
+	h, err := ReadHistory(ctx, root, since)
 	if err != nil {
 		return nil, false, err
 	}
-	if b, err := json.Marshal(s); err == nil && os.MkdirAll(dir, 0o755) == nil {
+	if b, err := json.Marshal(h); err == nil && os.MkdirAll(dir, 0o755) == nil {
 		// drop older git caches of this repository, then write ours
-		old, _ := filepath.Glob(filepath.Join(dir, "git-*.json"))
-		for _, o := range old {
-			os.Remove(o)
+		for _, pat := range []string{"git-*.json", "history-*.json"} {
+			old, _ := filepath.Glob(filepath.Join(dir, pat))
+			for _, o := range old {
+				os.Remove(o)
+			}
 		}
 		os.WriteFile(p, b, 0o644)
 	}
-	return s, false, nil
+	return h, false, nil
 }

@@ -107,7 +107,7 @@ Every lens is optional; the defaults show the plain map.
 | Lens | What it does |
 |---|---|
 | **height** | 3D building height: *Nesting* (terraces), *Flat*, or a metric: lines, complexity, functions, churn, recent change, authors |
-| **color** | *Area* hue, or the same metrics as a blue → red percentile ramp |
+| **color** | *Area* hue, *Cluster* (files grouped by imports, calls and git co-change rather than folders; hubs most of the code imports shown apart), or the same metrics as a blue → red percentile ramp |
 | **importance** | shrink vendored, test, generated, asset and data files so the core code gets the space |
 | **imports** | arcs from the selection to what it imports (orange) and from what imports it (blue) |
 | **calls** | arcs to what the selected function/file calls (violet) and from its callers (green); syntax-level, ambiguous names skipped |
@@ -122,6 +122,8 @@ scrap search [-precise] <path> <prefix>        symbol prefix search
 scrap render [-precise] -n 4 <path> <z> <x> <y> out.png
 scrap render -file <substr> -lh 11 -n 4 <path> out.png   preview tiles around a file
 scrap serve  [-addr host:port] [path]          WebSocket API for the viewers
+scrap graph  [-git-since 24.months] -o g.json <path>  file graph (imports, calls, co-change) as JSON
+scrap clusters [-res 1] [-git-since 12.months] <path> the clusters the cluster lens shows
 ```
 
 ## Status

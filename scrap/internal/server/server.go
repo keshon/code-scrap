@@ -44,8 +44,14 @@ type Server struct {
 	base    *codemap.Map
 	precise bool
 	git     map[string]codemap.GitStat
+	history [][]string // paths per commit, for co-change
 	gitTime int64
 	view    codemap.View
+
+	// clusters are computed on demand for the cluster lens and kept until
+	// the base map or the git history changes
+	clusters   *codemap.Clustering
+	clusterKey clusterKey
 
 	cur      atomic.Pointer[state]
 	gen      atomic.Uint32
@@ -111,7 +117,7 @@ func (s *Server) Open(root string) error {
 		return err
 	}
 	s.mu.Lock()
-	s.git, s.gitTime = nil, 0
+	s.git, s.history, s.gitTime = nil, nil, 0
 	s.mu.Unlock()
 	s.setBase(m, false)
 	log.Printf("fast index: %d files, %d lines, %d scopes in %d ms", m.Stats.Files, m.Stats.Lines, m.Stats.Scopes, m.Stats.IndexMs)
@@ -225,7 +231,7 @@ func (s *Server) readGit(ctx context.Context, root, since string) {
 	if !s.NoCache {
 		dir = codemap.CacheDir(root)
 	}
-	stats, cached, err := gitlog.ReadCached(ctx, root, since, dir)
+	h, cached, err := gitlog.ReadCached(ctx, root, since, dir)
 	if err != nil || ctx.Err() != nil {
 		if err != nil {
 			log.Printf("git history unavailable: %v", err)
@@ -233,12 +239,12 @@ func (s *Server) readGit(ctx context.Context, root, since string) {
 		s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 1, "total": 1})
 		return
 	}
-	g := make(map[string]codemap.GitStat, len(stats))
-	for p, st := range stats {
+	g := make(map[string]codemap.GitStat, len(h.Stats))
+	for p, st := range h.Stats {
 		g[p] = codemap.GitStat{Commits: st.Commits, Authors: st.Authors, LastChange: st.LastChange}
 	}
 	s.mu.Lock()
-	s.git, s.gitTime = g, time.Now().Unix()
+	s.git, s.history, s.gitTime = g, h.Commits, time.Now().Unix()
 	s.mu.Unlock()
 	log.Printf("git history (since %q): %d paths in %d ms (cached: %v)", since, len(g), time.Since(t).Milliseconds(), cached)
 	s.broadcast(map[string]any{"op": "progress", "pass": "git", "phase": "history", "done": 1, "total": 1})
@@ -280,7 +286,34 @@ func (s *Server) rebuild() {
 	if git != nil {
 		m = m.WithGit(git, gitTime)
 	}
+	if view.Color == codemap.ColorCluster {
+		m = m.WithClusters(s.clustersFor(base))
+	}
 	s.install(m.WithView(view), precise)
+}
+
+type clusterKey struct {
+	base    *codemap.Map
+	gitTime int64
+}
+
+// clustersFor returns the clustering of base under the current git history,
+// computing it when either changed.
+func (s *Server) clustersFor(base *codemap.Map) *codemap.Clustering {
+	s.mu.Lock()
+	key := clusterKey{base, s.gitTime}
+	c, history, fresh := s.clusters, s.history, s.clusterKey == key
+	s.mu.Unlock()
+	if c != nil && fresh {
+		return c
+	}
+	t := time.Now()
+	c = base.Cluster(history, codemap.DefaultClusterOptions)
+	log.Printf("clusters: %d (%d hubs, %d commits) in %d ms", len(c.Clusters), len(c.Hubs), len(history), time.Since(t).Milliseconds())
+	s.mu.Lock()
+	s.clusters, s.clusterKey = c, key
+	s.mu.Unlock()
+	return c
 }
 
 func (s *Server) install(m *codemap.Map, precise bool) {

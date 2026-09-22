@@ -96,8 +96,39 @@ func heatColor(t float32) [3]float32 {
 	return mix(stops[i], stops[i+1], t-float32(i))
 }
 
+// Cluster lens colors for hubs (landmarks) and unclustered files.
+var (
+	HubColor  = [3]float32{0.96, 0.95, 0.90}
+	NoneColor = [3]float32{0.30, 0.31, 0.34}
+)
+
+// ClusterColor is a cluster's color: the pastel set whatever the area
+// palette, since clusters need hues that tell apart.
+func ClusterColor(hue uint8) [3]float32 { return hues[hue%16] }
+
 // BoxColor is the outline color of a node; the viewer derives the fill.
 func BoxColor(m *codemap.Map, n *codemap.Node) [4]float32 {
+	if m.View.Color == codemap.ColorCluster {
+		if n.Kind == codemap.KindDir {
+			return [4]float32{0.36, 0.38, 0.44, 1}
+		}
+		var c [3]float32
+		switch k := m.ClusterOf(n.File); {
+		case k == codemap.ClusterHub:
+			c = HubColor
+		case k < 0 || m.Clusters == nil:
+			c = NoneColor
+		default:
+			c = ClusterColor(m.Clusters.Clusters[k].Hue)
+			if f := &m.Files[n.File]; f.Class.Has(codemap.ClassTest | codemap.ClassData | codemap.ClassVendored | codemap.ClassMinified) {
+				c = mix(c, grey, 0.45) // attached, not clustered itself
+			}
+		}
+		if n.Kind == codemap.KindScope {
+			c = mix(c, [3]float32{1, 1, 1}, 0.25)
+		}
+		return [4]float32{c[0], c[1], c[2], 1}
+	}
 	if m.View.Color != "" && m.View.Color != codemap.ColorArea {
 		switch {
 		case n.Kind == codemap.KindDir:

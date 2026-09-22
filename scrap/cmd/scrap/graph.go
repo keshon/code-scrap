@@ -71,3 +71,41 @@ func cmdGraph(args []string) error {
 	}
 	return bw.Flush()
 }
+
+func cmdClusters(args []string) error {
+	fs := flag.NewFlagSet("clusters", flag.ExitOnError)
+	var c common
+	c.register(fs)
+	since := fs.String("git-since", "12.months", `co-change history window ("" = all history)`)
+	o := codemap.DefaultClusterOptions
+	fs.Float64Var(&o.Resolution, "res", o.Resolution, "resolution: higher = more, smaller clusters")
+	fs.Float64Var(&o.HubShare, "hub", o.HubShare, "share of the code importing a file that makes it a hub")
+	fs.IntVar(&o.HubMin, "hubmin", o.HubMin, "fewest importers a hub needs")
+	fs.IntVar(&o.MinSize, "min", o.MinSize, "smaller clusters stay unclustered")
+	fs.Parse(args)
+	if fs.NArg() != 1 {
+		usage()
+	}
+	m, err := build(c, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr)
+	var history [][]string
+	if !c.noGit {
+		if h, err := gitlog.ReadHistory(context.Background(), m.Root, *since); err == nil {
+			history = h.Commits
+		}
+	}
+	t := time.Now()
+	cl := m.Cluster(history, o)
+	fmt.Printf("%d clusters · %d hubs · %d commits · %d ms\n\n", len(cl.Clusters), len(cl.Hubs), len(history), time.Since(t).Milliseconds())
+	for k, x := range cl.Clusters {
+		fmt.Printf("#%-3d %5d files (%4d core) %7d lines  %-44s %s\n", k, x.Files, x.Core, x.Lines, x.Name, m.Path(x.Home))
+	}
+	fmt.Println("\nhubs:")
+	for _, f := range cl.Hubs[:min(len(cl.Hubs), 12)] {
+		fmt.Println("  " + m.Files[f].Path)
+	}
+	return nil
+}

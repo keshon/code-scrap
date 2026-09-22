@@ -63,6 +63,10 @@ func ColorLenses() []Lens {
 		{ID: ColorArea, Short: "Area", Long: "Top-level area",
 			Desc: "Each top-level folder gets its own hue; tests, vendored and data files are muted."},
 	}
+	out = append(out, Lens{ID: ColorCluster, Short: "Cluster", Long: "Connected clusters",
+		Desc: "Files grouped by how they connect: imports, calls and changing together in git, regardless of folder. " +
+			"Hubs most of the code imports are marked apart; tests and styles take their subject's cluster.",
+		High: "same color = same cluster"})
 	for _, m := range Metrics {
 		l := metricLens(m)
 		l.Desc += " Colored by percentile, cold (blue) to hot (red)."
