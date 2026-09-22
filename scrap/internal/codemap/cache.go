@@ -13,7 +13,7 @@ import (
 
 // cacheVersion changes whenever analysis results change shape or meaning;
 // an old cache is then ignored.
-const cacheVersion = 3
+const cacheVersion = 4
 
 // FileCache keeps per-file analysis results between runs, keyed by path,
 // size and modification time, so restarts and re-indexes only parse files
@@ -34,6 +34,7 @@ type cacheEntry struct {
 	Scopes    []syntax.Scope
 	Decls     []syntax.Decl
 	Imports   []string
+	JS        *jsModule
 	Calls     [][]string
 }
 
@@ -109,7 +110,7 @@ func (c *FileCache) get(f *rawFile, mod int64, precise bool) bool {
 		return false
 	}
 	f.class, f.lines, f.precise = e.Class, e.Lines, e.Precise
-	f.scopes, f.decls, f.imports, f.calls = e.Scopes, e.Decls, e.Imports, e.Calls
+	f.scopes, f.decls, f.imports, f.js, f.calls = e.Scopes, e.Decls, e.Imports, e.JS, e.Calls
 	return true
 }
 
@@ -127,7 +128,7 @@ func (c *FileCache) put(f *rawFile, mod int64, precise bool) {
 		return // keep the more thorough result
 	}
 	c.entries[f.path] = cacheEntry{Size: f.size, Mod: mod, Pass: pass, Class: f.class, Lines: f.lines,
-		Precise: f.precise, Scopes: f.scopes, Decls: f.decls, Imports: f.imports, Calls: f.calls}
+		Precise: f.precise, Scopes: f.scopes, Decls: f.decls, Imports: f.imports, JS: f.js, Calls: f.calls}
 	c.dirty = true
 	c.mu.Unlock()
 }

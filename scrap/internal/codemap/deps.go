@@ -19,6 +19,7 @@ type Deps struct {
 	Edges int
 
 	Specs      int            // import specifiers seen
+	ViaBarrel  int            // edges traced through JS/TS re-exports to the declaring file
 	External   int            // bare specifiers of packages outside the repo
 	Unresolved map[string]int // repo-looking specifiers that matched nothing (sample)
 }
@@ -84,6 +85,9 @@ type resolver struct {
 	baseURL string           // tsconfig baseUrl, repo-relative ("" = none)
 	goMods  []goMod
 	godot   []string // directories holding a project.godot
+
+	js     map[int32]*jsModule // by file node
+	jsMemo map[jsKey]int32
 }
 
 type alias struct {
@@ -97,8 +101,8 @@ type goMod struct {
 
 var jsExts = []string{".ts", ".tsx", ".d.ts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".json", ".scss", ".css"}
 
-func (m *Map) buildDeps(imports map[int32][]string) {
-	r := &resolver{m: m, files: map[string]int32{}, dirs: map[string]int32{}}
+func (m *Map) buildDeps(imports map[int32][]string, js map[int32]*jsModule) {
+	r := &resolver{m: m, files: map[string]int32{}, dirs: map[string]int32{}, js: js, jsMemo: map[jsKey]int32{}}
 	for i := range m.Files {
 		f := &m.Files[i]
 		r.files[f.Path] = f.Node
@@ -139,13 +143,18 @@ func (m *Map) buildDeps(imports map[int32][]string) {
 				}
 				continue
 			}
-			if to == from || seen[to] {
-				continue
+			for _, t := range r.jsTargets(from, to, spec) {
+				if t == from || seen[t] {
+					continue
+				}
+				seen[t] = true
+				d.Out[from] = append(d.Out[from], t)
+				d.In[t] = append(d.In[t], from)
+				d.Edges++
+				if t != to {
+					d.ViaBarrel++
+				}
 			}
-			seen[to] = true
-			d.Out[from] = append(d.Out[from], to)
-			d.In[to] = append(d.In[to], from)
-			d.Edges++
 		}
 	}
 	m.Deps = &d

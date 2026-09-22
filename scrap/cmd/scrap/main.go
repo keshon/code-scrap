@@ -14,6 +14,7 @@ func usage() {
 usage:
   scrap stats  [flags] <path>                  index and print a summary
   scrap search [flags] <path> <prefix>         symbol prefix search
+  scrap graph  [flags] <path>                  export the file relation graph as JSON
   scrap render [flags] <path> <z> <x> <y> <out.png>  render one tile (debugging)
   scrap serve  [flags] [path]                  index and serve the viewer API
   scrap atlas  [-font file] <out.png>          write the code-font glyph atlas
@@ -24,6 +25,11 @@ flags (all commands):
   -nogit     walk the file system instead of using git ls-files
 serve:
   -addr      listen address (default 127.0.0.1:7878)
+graph:
+  -o         output file (default stdout)
+  -git-since co-change history window (default 24.months)
+  -maxfiles  skip commits touching more files (default 40)
+  -minshared shared commits a co-change pair needs (default 2)
 `)
 	os.Exit(2)
 }
@@ -48,6 +54,8 @@ func main() {
 		err = cmdStats(os.Args[2:])
 	case "search":
 		err = cmdSearch(os.Args[2:])
+	case "graph":
+		err = cmdGraph(os.Args[2:])
 	case "render":
 		err = cmdRender(os.Args[2:])
 	case "atlas":

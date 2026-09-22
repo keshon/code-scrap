@@ -1,6 +1,7 @@
 package codemap
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -55,5 +56,51 @@ func TestRelationsOnScrap(t *testing.T) {
 				t.Errorf("api.go should import codemap and tile; got %v", targets)
 			}
 		}
+	}
+}
+
+func TestGraphOnScrap(t *testing.T) {
+	m, err := Build("../..", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := [][]string{
+		{"internal/codemap/graph.go", "cmd/scrap/graph.go"},
+		{"internal/codemap/graph.go", "cmd/scrap/graph.go", "missing.go"},
+		{"internal/codemap/graph.go", "internal/codemap/model.go", "internal/codemap/deps.go"}, // mass edit at MaxFiles 2
+	}
+	g := m.Graph(history, GraphOptions{MaxFiles: 2, MinShared: 2, MaxDecls: 50})
+	id := map[string]int32{}
+	for _, n := range g.Nodes {
+		id[n.Path] = n.ID
+	}
+	has := func(kind, s, t string) *GraphEdge {
+		for i, e := range g.Edges {
+			if e.Kind == kind && e.S == id[s] && e.T == id[t] {
+				return &g.Edges[i]
+			}
+		}
+		return nil
+	}
+	// api.go imports package codemap: an edge to each of its files
+	if e := has("import", "internal/server/api.go", "internal/codemap/graph.go"); e == nil || e.W >= 1 {
+		t.Errorf("package import should spread over codemap files: %+v", e)
+	}
+	if has("call", "cmd/scrap/main.go", "cmd/scrap/graph.go") == nil || has("call", "cmd/scrap/graph.go", "internal/gitlog/gitlog.go") == nil {
+		t.Error("main should call cmdGraph, and cmdGraph gitlog.Walk")
+	}
+	a, b := id["internal/codemap/graph.go"], id["cmd/scrap/graph.go"]
+	e := has("cochange", "cmd/scrap/graph.go", "internal/codemap/graph.go")
+	if a < b {
+		e = has("cochange", "internal/codemap/graph.go", "cmd/scrap/graph.go")
+	}
+	if e == nil || e.N != 2 || e.W != 2 {
+		t.Errorf("co-change pair: %+v", e)
+	}
+	if g.Stats.CommitsTooLarge != 1 || g.Stats.CommitsUsed != 2 || g.Nodes[a].Commits != 3 {
+		t.Errorf("stats %+v, commits %d", g.Stats, g.Nodes[a].Commits)
+	}
+	if !slices.Contains(g.Nodes[a].Decls, "Graph") {
+		t.Errorf("graph.go decls %v", g.Nodes[a].Decls)
 	}
 }

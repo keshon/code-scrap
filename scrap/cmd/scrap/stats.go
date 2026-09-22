@@ -57,6 +57,7 @@ func cmdStats(args []string) error {
 	fmt.Printf("index     %d ms\nlayout    %d ms\n", s.IndexMs, s.LayoutMs)
 	if d := m.Deps; d != nil {
 		fmt.Printf("imports   %d edges from %d specifiers (%d external, %d local unresolved)\n", d.Edges, d.Specs, d.External, len(d.Unresolved))
+		fmt.Printf("          %d traced through re-exports to the declaring file\n", d.ViaBarrel)
 		n := 0
 		for u := range d.Unresolved {
 			if n++; n > 8 {

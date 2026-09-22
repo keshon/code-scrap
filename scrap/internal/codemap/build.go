@@ -65,6 +65,7 @@ type rawFile struct {
 	scopes  []syntax.Scope
 	decls   []syntax.Decl
 	imports []string
+	js      *jsModule  // JS/TS import and export names
 	calls   [][]string // per scope: distinct callee names inside it
 }
 
@@ -147,13 +148,17 @@ func Build(root string, opt Options) (*Map, error) {
 
 	m := assemble(abs, top, files, opt)
 	imports := map[int32][]string{}
+	js := map[int32]*jsModule{}
 	for i := range m.Files {
 		f := &m.Files[i]
 		if spec := files[f.raw].imports; len(spec) > 0 {
 			imports[f.Node] = spec
 		}
+		if j := files[f.raw].js; j != nil {
+			js[f.Node] = j
+		}
 	}
-	m.buildDeps(imports)
+	m.buildDeps(imports, js)
 	m.Stats.Imports = m.Deps.Edges
 	m.sortByName = opt.SortByName
 	m.charAspect = opt.CharAspect
@@ -310,6 +315,9 @@ func analyze(f *rawFile, precise bool) {
 		return
 	}
 	f.imports = extractImports(f.lang.Name, src)
+	if f.lang.Name == "JavaScript/TypeScript" {
+		f.js = parseJSModule(src)
+	}
 	var scan syntax.Scan
 	syntax.Tokenize(lines, f.lang, false, &scan)
 	f.scopes, f.decls = syntax.FindScopes(lines, f.lang, &scan)

@@ -1,4 +1,4 @@
-// Package gitlog reads per-file history statistics from git.
+// Package gitlog reads commit history and per-file statistics from git.
 package gitlog
 
 import (
@@ -22,12 +22,19 @@ type Stat struct {
 	LastChange int64 // unix seconds
 }
 
-// Read walks the non-merge history of the repository at root since the
+// Commit is one non-merge commit: when, by whom, and the paths it touched.
+type Commit struct {
+	Time   int64 // unix seconds
+	Author string
+	Files  []string // repo-relative slash paths
+}
+
+// Walk streams the non-merge history of the repository at root since the
 // given git date ("12.months", "2024-01-01"; "" = all history, which can
-// take minutes on large repositories) and returns statistics keyed by
-// repo-relative slash paths. Files untouched in the window are absent.
-func Read(ctx context.Context, root, since string) (map[string]Stat, error) {
-	// \x1e starts a commit header "time\x1fauthor"; file names follow.
+// take minutes on large repositories), newest first. fn must not keep
+// c.Files past the call.
+func Walk(ctx context.Context, root, since string, fn func(c *Commit)) error {
+	//  starts a commit header "timeauthor"; file names follow.
 	args := []string{"-C", root, "log", "--no-merges", "--no-renames",
 		"--format=%x1e%ct%x1f%aN", "--name-only", "--relative"}
 	if since != "" {
@@ -36,54 +43,73 @@ func Read(ctx context.Context, root, since string) (map[string]Stat, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return err
 	}
-	stats := map[string]*Stat{}
-	authors := map[string]map[string]bool{}
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	var when int64
-	var who string
+	var c Commit
+	started := false
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
 			continue
 		}
 		if line[0] == 0x1e {
+			if started {
+				fn(&c)
+			}
+			started = true
+			c.Time, c.Author, c.Files = 0, "", c.Files[:0]
 			h := line[1:]
 			if i := bytes.IndexByte(h, 0x1f); i >= 0 {
-				when, _ = strconv.ParseInt(string(h[:i]), 10, 64)
-				who = string(h[i+1:])
+				c.Time, _ = strconv.ParseInt(string(h[:i]), 10, 64)
+				c.Author = string(h[i+1:])
 			}
 			continue
 		}
-		p := string(line)
-		s := stats[p]
-		if s == nil {
-			s = &Stat{}
-			stats[p] = s
-			authors[p] = map[string]bool{}
-		}
-		s.Commits++
-		if when > s.LastChange {
-			s.LastChange = when
-		}
-		if !authors[p][who] {
-			authors[p][who] = true
-			s.Authors++
-		}
+		c.Files = append(c.Files, string(line))
+	}
+	if started {
+		fn(&c)
 	}
 	if err := cmd.Wait(); err != nil {
+		return err
+	}
+	return sc.Err()
+}
+
+// Read returns per-path statistics over the history Walk visits. Files
+// untouched in the window are absent.
+func Read(ctx context.Context, root, since string) (map[string]Stat, error) {
+	stats := map[string]*Stat{}
+	authors := map[string]map[string]bool{}
+	err := Walk(ctx, root, since, func(c *Commit) {
+		for _, p := range c.Files {
+			s := stats[p]
+			if s == nil {
+				s = &Stat{}
+				stats[p] = s
+				authors[p] = map[string]bool{}
+			}
+			s.Commits++
+			s.LastChange = max(s.LastChange, c.Time)
+			if !authors[p][c.Author] {
+				authors[p][c.Author] = true
+				s.Authors++
+			}
+		}
+	})
+	if err != nil {
 		return nil, err
 	}
 	res := make(map[string]Stat, len(stats))
 	for p, s := range stats {
 		res[p] = *s
 	}
-	return res, sc.Err()
+	return res, nil
 }
 
 // Head returns the commit the repository's HEAD points at ("" if none).
