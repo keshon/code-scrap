@@ -140,7 +140,7 @@ func _cluster(c: Dictionary, dim: String) -> String:
 		return "[color=%s]cluster[/color]  [color=%s]■[/color] hub · imported by much of the code\n" % [dim, _rgb(c.color)]
 	if c.get("none", false):
 		return "[color=%s]cluster  none[/color]\n" % dim
-	var parts: Array = c.get("parts", [])
+	var parts: Array = c.get("parts", []) if c.get("parts") != null else []
 	if parts.is_empty():
 		return ""
 	var t := "[color=%s]clusters[/color]  %d, over %s clustered files\n" % [dim, int(c.spread), Fmt.num(c.clustered)]

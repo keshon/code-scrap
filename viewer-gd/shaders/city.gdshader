@@ -100,36 +100,52 @@ float diffuse(vec3 n, vec3 l) {
 	return mix(1.0, lit / avg, scrap_light_strength);
 }
 
-// Chamfer along every edge of a face: how far inside the face this pixel
-// is (0 at an edge, 1 past the chamfer) and the normal a real chamfer
-// would have there. Boxes that touch then part along a shaded groove.
-float chamfer(bool roof, vec3 n, vec2 uv, out vec3 bn) {
+// Chamfer along the box's real edges: how far inside this pixel is (0 at an
+// edge, 1 past the chamfer) and the normal a real chamfer would have there.
+// Boxes that touch then part along a shaded groove. Measured in the whole
+// box, not in the tile-clipped piece, and only at edges the piece really
+// has (v_custom.x, as for outlines) — otherwise every tile seam would get
+// its own bevel.
+float chamfer(bool roof, vec3 n, out vec3 bn) {
 	bn = n;
 	if (scrap_bevel <= 0.0) {
 		return 1.0;
 	}
-	bool zface = abs(n.z) > 0.5;
-	vec2 fs = roof ? v_dims.xy : vec2(zface ? v_dims.x : v_dims.y, v_dims.w);
-	// measured on the box's footprint, and never more than half a wall
+	int edges = int(v_custom.x + 0.5);
+	float big = 1e9;
+	float dl = (edges & 1) != 0 ? v_local.x : big;              // x−
+	float dr = (edges & 4) != 0 ? v_dims.x - v_local.x : big;   // x+
+	float dt = (edges & 2) != 0 ? v_local.y : big;              // z−
+	float db = (edges & 8) != 0 ? v_dims.y - v_local.y : big;   // z+
 	float bw = scrap_bevel * min(v_dims.x, v_dims.y);
-	if (!roof) {
-		bw = min(bw, 0.45 * v_dims.w);
+	vec3 outward;
+	float d;
+	if (roof) {
+		float dx = min(dl, dr);
+		float dz = min(dt, db);
+		d = min(dx, dz);
+		outward = dx <= dz ? vec3(dl <= dr ? -1.0 : 1.0, 0.0, 0.0)
+		                   : vec3(0.0, 0.0, dt <= db ? -1.0 : 1.0);
+	} else {
+		bw = min(bw, 0.45 * v_dims.w);        // never more than half a wall
+		bool zface = abs(n.z) > 0.5;
+		float along = zface ? min(dl, dr) : min(dt, db);
+		float up = (1.0 - v_local.z) * v_dims.w;
+		float down = v_local.z * v_dims.w;
+		float vert = min(up, down);
+		d = min(along, vert);
+		if (vert <= along) {
+			outward = vec3(0.0, up <= down ? 1.0 : -1.0, 0.0);
+		} else if (zface) {
+			outward = vec3(dl <= dr ? -1.0 : 1.0, 0.0, 0.0);
+		} else {
+			outward = vec3(0.0, 0.0, dt <= db ? -1.0 : 1.0);
+		}
 	}
-	if (bw <= 0.0) {
+	if (bw <= 0.0 || d >= big) {
 		return 1.0;
 	}
-	vec2 d = min(uv, vec2(1.0) - uv) * fs;
-	float t = clamp(min(d.x, d.y) / bw, 0.0, 1.0);
-	vec3 outward;
-	if (roof) {
-		outward = d.x <= d.y ? vec3(uv.x < 0.5 ? -1.0 : 1.0, 0.0, 0.0)
-		                     : vec3(0.0, 0.0, uv.y < 0.5 ? -1.0 : 1.0);
-	} else if (d.y <= d.x) {
-		outward = vec3(0.0, uv.y < 0.5 ? -1.0 : 1.0, 0.0);   // bottom / top edge
-	} else {
-		vec3 tang = zface ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
-		outward = tang * (uv.x < 0.5 ? -1.0 : 1.0);
-	}
+	float t = clamp(d / bw, 0.0, 1.0);
 	bn = normalize(mix(n, outward, 0.7 * (1.0 - t)));
 	return t;
 }
@@ -155,7 +171,7 @@ void fragment() {
 	vec3 c;
 	float spec = 0.0;
 	vec3 bn;
-	float cham = chamfer(roof, n, UV, bn);
+	float cham = chamfer(roof, n, bn);
 	if (roof) {
 		int edges = int(v_custom.x + 0.5);
 		vec2 p = v_local.xy;                        // render units in the piece

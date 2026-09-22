@@ -115,6 +115,7 @@ func nodeInfo(st *state, id int32) map[string]any {
 		"descendants": n.End - id - 1,
 		"rect":        rect(n.Rect),
 		"top":         n.Top,
+		"base":        baseTop(m, id),
 		"line":        1,
 		"ancestors":   ancestors(m, id),
 	}
@@ -196,7 +197,7 @@ func clusterInfo(m *codemap.Map, id int32) map[string]any {
 	}
 	keys := slices.Collect(maps.Keys(count))
 	slices.SortFunc(keys, func(a, b int32) int { return cmp.Or(cmp.Compare(count[b], count[a]), cmp.Compare(a, b)) })
-	var parts []map[string]any
+	parts := []map[string]any{}
 	for _, k := range keys[:min(len(keys), 5)] {
 		var e map[string]any
 		if k == codemap.ClusterHub {
@@ -206,6 +207,9 @@ func clusterInfo(m *codemap.Map, id int32) map[string]any {
 		}
 		e["share"] = float64(count[k]) / float64(total)
 		parts = append(parts, e)
+	}
+	if total == 0 {
+		return nil // nothing here belongs to a cluster yet
 	}
 	return map[string]any{"parts": parts, "spread": len(keys), "clustered": total}
 }
@@ -230,6 +234,7 @@ func pick(st *state, x, y, scale float64) map[string]any {
 		out["path"] = st.m.Path(id)
 		out["rect"] = rect(n.Rect)
 		out["top"] = n.Top
+		out["base"] = baseTop(st.m, id)
 		if line >= 0 {
 			f := &st.m.Files[n.File]
 			out["lineRect"] = rect(f.LineRect(line))
@@ -248,6 +253,15 @@ func pick(st *state, x, y, scale float64) map[string]any {
 		}
 	}
 	return out
+}
+
+// baseTop is the height a box stands on: its parent's roof (0 at the root).
+// Highlights in 3D span base..top, like the box itself.
+func baseTop(m *codemap.Map, id int32) float64 {
+	if p := m.Nodes[id].Parent; p >= 0 {
+		return m.Nodes[p].Top
+	}
+	return 0
 }
 
 // boxFacts adds what hover tooltips and selection frames need: the
@@ -321,6 +335,7 @@ func pickRay(st *state, r [6]float64) map[string]any {
 		out["path"] = st.m.Path(id)
 		out["rect"] = rect(n.Rect)
 		out["top"] = n.Top
+		out["base"] = baseTop(st.m, id)
 		out["t"] = t
 	}
 	return out

@@ -20,6 +20,7 @@ extends Node
 ##   --crumb=<n>       then open the n-th breadcrumb chevron menu
 ##   --hover=fx,fy     2D: point the cursor at this fraction of the map view
 ##                     (after --wait/2) and pick what is under it
+##   --later=id:value  change a setting after --wait/2 (rebuilds the layout)
 
 var shell: Node   # main.gd
 var args := {}
@@ -68,6 +69,12 @@ func _ready() -> void:
 			shell._node_req = client.request("node", {"path": args.select}), CONNECT_ONE_SHOT)
 	if args.get("view", "") == "3d":
 		client.hello.connect(func(_i): _enter_3d(), CONNECT_ONE_SHOT)
+	if args.has("later"):
+		var kv := String(args.later)
+		var sid := kv.get_slice(":", 0)
+		var raw := kv.substr(sid.length() + 1)
+		get_tree().create_timer(float(args.get("wait", 4)) * 0.5).timeout.connect(
+			func(): _apply_setting(sid, raw))
 	if args.has("hover"):
 		var f := String(args.hover).split(",")
 		get_tree().create_timer(float(args.get("wait", 4)) * 0.5).timeout.connect(func():
@@ -135,3 +142,17 @@ func _enter_3d() -> void:
 			wb.position = c
 			city._gui_input(wb)
 			await get_tree().create_timer(0.1).timeout
+
+
+## One "--set"-style assignment, typed by the settings schema.
+func _apply_setting(id: String, raw: String) -> void:
+	var def: Dictionary = Settings.defs.get(id, {})
+	match def.get("type", ""):
+		"bool":
+			Settings.set_value(id, raw == "true" or raw == "1")
+		"int", "float":
+			Settings.set_value(id, float(raw))
+		"color":
+			Settings.set_value(id, Color.html(raw))
+		_:
+			Settings.set_value(id, raw)

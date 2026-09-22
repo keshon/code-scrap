@@ -12,7 +12,11 @@ const (
 	headerFrac    = 0.020 // label strip on top of dirs and files
 	dirHeaderFrac = 0.045 // folder header band (View.Headers) of the whole map…
 	dirHeaderMax  = 0.13  // …growing up to this for small folders
-	colGap        = 4     // chars between text columns
+	// A folder whose own band would sit right under its parent's and span
+	// nearly the same width shares that band instead ("a / b / c"), so
+	// chains of one dominant folder don't stack bands.
+	headerMergeWidth = 0.88
+	colGap           = 4 // chars between text columns
 
 	// DefaultCharAspect is a monospace glyph's advance / line height with
 	// IDE-like line spacing (Consolas: 0.55 em advance, 1.36 em lines).
@@ -33,12 +37,31 @@ func (m *Map) headerFrac(k Kind, s float64) float64 {
 }
 
 // Header returns the label strip of a dir or file node: the folder header
-// band when View.Headers is on.
+// band when View.Headers is on (empty for a folder merged into its
+// parent's band).
 func (m *Map) Header(id int32) Rect {
 	n := &m.Nodes[id]
+	if n.InHeader {
+		return Rect{}
+	}
 	s := n.Rect.Min()
 	p := s * padFrac
 	return rect(n.Rect.X+p, n.Rect.Y+p, n.Rect.W-2*p, s*m.headerFrac(n.Kind, s))
+}
+
+// HeaderName is what a folder's header band says: its own name, plus the
+// names of the folders merged into it ("e2e / data / wc").
+func (m *Map) HeaderName(id int32) string {
+	name := m.Nodes[id].Name
+	for n := &m.Nodes[id]; n.Kind == KindDir && len(n.Children) > 0; {
+		c := &m.Nodes[n.Children[0]]
+		if !c.InHeader {
+			break
+		}
+		name += " / " + c.Name
+		n = c
+	}
+	return name
 }
 
 // content returns the area below the header where children or text go.
@@ -47,6 +70,26 @@ func (m *Map) content(r Rect, k Kind) Rect {
 	p := s * padFrac
 	h := s * m.headerFrac(k, s)
 	return rect(r.X+p, r.Y+p+h, r.W-2*p, max(r.H-2*p-h, 0))
+}
+
+// mergesIntoHeader tells whether a child laid out at r starts at the top of
+// its parent's content area and spans nearly all of it: its header band
+// would then sit right under the parent's, saying almost the same thing.
+func mergesIntoHeader(r, inner Rect) bool {
+	eps := inner.Min() * 0.02
+	return r.Y <= inner.Y+eps && r.X <= inner.X+eps && r.W >= headerMergeWidth*inner.W
+}
+
+// contentOf is content for a node: a folder merged into its parent's header
+// band keeps no band of its own, so its children start right at its top.
+func (m *Map) contentOf(id int32) Rect {
+	n := &m.Nodes[id]
+	if n.InHeader {
+		s := n.Rect.Min()
+		p := s * padFrac
+		return rect(n.Rect.X+p, n.Rect.Y+p, n.Rect.W-2*p, max(n.Rect.H-2*p, 0))
+	}
+	return m.content(n.Rect, n.Kind)
 }
 
 // Elevation steps, relative to a box's shorter side. Each box stands on its
@@ -119,7 +162,7 @@ func (m *Map) layoutNode(id int32) {
 	n := &m.Nodes[id]
 	switch n.Kind {
 	case KindDir:
-		inner := m.content(n.Rect, KindDir)
+		inner := m.contentOf(id)
 		ws := make([]float64, len(n.Children))
 		for i, c := range n.Children {
 			ws[i] = m.Nodes[c].Weight
@@ -131,7 +174,9 @@ func (m *Map) layoutNode(id int32) {
 			rects = treemap.Squarify(ws, inner)
 		}
 		for i, c := range n.Children {
-			m.Nodes[c].Rect = rects[i]
+			cn := &m.Nodes[c]
+			cn.Rect = rects[i]
+			cn.InHeader = m.View.Headers && cn.Kind == KindDir && mergesIntoHeader(rects[i], inner)
 			m.layoutNode(c)
 		}
 	case KindFile:

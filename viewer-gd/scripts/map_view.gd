@@ -613,10 +613,24 @@ func frame_selected() -> void:
 
 
 ## Shows a selection made elsewhere (no signal).
-func set_selection(id: int, rect: Array) -> void:
+func set_selection(id: int, rect: Array, header := []) -> void:
 	selection_id = id
 	selection_rect = rect
+	selection_header = header
 	_overlay.queue_redraw()
+
+
+## Is the selection (mostly) on screen? Asked before a rebuild, to decide
+## whether the view should follow it once the layout moves.
+func selection_on_screen() -> bool:
+	if selection_rect.size() != 4:
+		return false
+	var r := rect_to_screen(selection_rect)
+	var v := Rect2(Vector2.ZERO, size)
+	if not v.intersects(r):
+		return false
+	var shown := v.intersection(r)
+	return shown.get_area() >= 0.5 * minf(r.get_area(), v.get_area())
 
 
 func select_node(id: int, rect: Array, header := []) -> void:

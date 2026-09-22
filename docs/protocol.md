@@ -11,7 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
-| 9 | In 3D tiles, file labels carry the whole box rect too (folder labels already did), so viewers can place a name on the roof's header strip or its middle. |
+| 9 | `node`/`pick` carry `base`, the height a box stands on (3D highlights span base..top). In 3D tiles, file labels carry the whole box rect too (folder labels already did), so viewers can place a name on the roof's header strip or its middle. |
 | 8 | `options.look.headers` (folder header bands). 2D tiles may carry kind-4 instances: a folder's header band, drawn after the folder and before its children; with headers on, folder labels span that band. |
 | 7 | `options.look = {order, algorithm, palette, lineNumbers}` replaces `stable`/`palette`. Text blocks start with a gutter (line numbers or padding): `hello.text.colChars` includes it, and text keys change with it. |
 | 6 | `overview` op (minimap). `options` accepts `stable` and `palette`. In 3D tiles, folder labels carry the whole box rect (for wall signs). |
@@ -84,7 +84,7 @@ This is broadcast while indexing. `done == total` ends a phase.
 
 ### `node`
 
-The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lines`, `bytes`, `children`, `descendants`, `rect`, `top` and `line`. Depending on the node it also carries:
+The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lines`, `bytes`, `children`, `descendants`, `rect`, `top`, `base` (the height it stands on: its parent's roof) and `line`. Depending on the node it also carries:
 
 - files and scopes: `lang`, `precise`, `classes`;
 - files: `fileMetrics` (`functions`, `maxComplexity`, and when git is loaded `commits`, `authors`, `lastChange`);
@@ -95,7 +95,7 @@ The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lin
 
 ### `pick`
 
-`node` (−1 = nothing) and `line` (file line under the point, or −1). When a node was hit, it also carries `name`, `kind`, `path`, `rect`, `top`, `lines`, and `lineRect` or `t`. Folders add `header` (their header band rect), `files` and `dirs` (counts of everything inside); files and scopes add `folder: {node, name, rect, header}`, the folder they live in (hover context and tooltips).
+`node` (−1 = nothing) and `line` (file line under the point, or −1). When a node was hit, it also carries `name`, `kind`, `path`, `rect`, `top`, `base`, `lines`, and `lineRect` or `t`. Folders add `header` (their header band rect), `files` and `dirs` (counts of everything inside); files and scopes add `folder: {node, name, rect, header}`, the folder they live in (hover context and tooltips).
 
 ### `search`
 

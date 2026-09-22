@@ -483,7 +483,7 @@ func _on_hello(info: Dictionary) -> void:
 		_tree_sig = sig
 		explorer.reload()
 		if _selected_path != "":
-			_pending = {"select": true, "fly": false}
+			_pending = {"select": true, "fly": false, "follow": _follow_selection()}
 			_node_req = client.request("node", {"path": _selected_path})
 		elif _selected_id >= 0:
 			map.deselect()
@@ -491,6 +491,9 @@ func _on_hello(info: Dictionary) -> void:
 	elif regen:
 		_refresh_relations()  # geometry may have moved with the new view
 		if _selected_id >= 0:
+			# a new layout moves the boxes: keep the selection in view when
+			# it was in view before (lens, importance, headers, order…)
+			_pending = {"follow": _follow_selection()}
 			_node_req = client.request("node", {"node": _selected_id})  # fresh rect for the highlight
 	var pass_name := "precise" if info.precise else "fast"
 	status.set_progress("%s · %s files · %s lines · %s pass" % [info.name, Fmt.num(s.Files), Fmt.num(s.Lines), pass_name])
@@ -556,6 +559,12 @@ func _on_reply(id: int, data: Dictionary) -> void:
 				_push_arcs()
 
 
+## True when the selection is on screen in the flat map, so a rebuild that
+## moves it should bring the view along.
+func _follow_selection() -> bool:
+	return not is_3d() and map.selection_on_screen()
+
+
 func _on_node(data: Dictionary) -> void:
 	var p := _pending
 	_pending = {}
@@ -569,7 +578,7 @@ func _on_node(data: Dictionary) -> void:
 	if p.get("select", false):
 		_shown_node = nid  # the select below re-emits selected: no second request
 		if is_3d():
-			city.select(nid, data.rect, float(data.top), kind)
+			city.select(nid, data.rect, float(data.top), kind, float(data.get("base", 0.0)))
 			if p.fly:
 				city.focus_rect(data.rect, float(data.top))
 		else:
@@ -579,8 +588,11 @@ func _on_node(data: Dictionary) -> void:
 				map.fly_to(t[0], t[1], t[2])
 	_shown_node = nid
 	# mirror the selection into the other view
-	map.set_selection(nid, data.rect)
-	city.set_selection(data.rect, float(data.top), kind)
+	map.set_selection(nid, data.rect, data.get("header", []))
+	city.set_selection(data.rect, float(data.top), kind, float(data.get("base", 0.0)))
+	if p.get("follow", false) and not is_3d() and not map.selection_on_screen():
+		var f := map.fit_rect(data.rect)
+		map.fly_to(f[0], f[1], f[2])
 	inspector.show_node(data)
 	var anc: Array = data.get("ancestors", [])
 	header.set_path(String(data.name), nid, anc)

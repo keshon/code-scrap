@@ -135,7 +135,7 @@ func (b *Boxes) header(m *codemap.Map, id int32, tr codemap.Rect, scale float64)
 	c := BoxColor(m, n)
 	b.push(h, tr, c, KindHeader, float32(n.Depth), n.Top, id)
 	if h.H*scale >= minHeaderLabelPx {
-		b.label(id, uint8(n.Kind), c, h, n.Top, tr, n.Name)
+		b.label(id, uint8(n.Kind), c, h, n.Top, tr, m.HeaderName(id))
 	}
 }
 

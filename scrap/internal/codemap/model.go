@@ -43,7 +43,11 @@ type Node struct {
 	End      int32
 	File     int32 // index into Map.Files for files and scopes, -1 for dirs
 	Hue      uint8 // palette slot inherited from the top-level ancestor
-	Rect     Rect  // layout rect; for scopes, the bounds of all segments
+	// InHeader means this folder fills its parent almost completely, so
+	// under View.Headers it shares the parent's header band ("a / b / c")
+	// instead of stacking another one (see layout).
+	InHeader bool
+	Rect     Rect // layout rect; for scopes, the bounds of all segments
 
 	// 3D elevation (world units): the box rises from the ground to Top;
 	// MaxTop is the highest Top in the subtree (for ray-picking bounds).

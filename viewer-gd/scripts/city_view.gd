@@ -767,15 +767,16 @@ func _update_text(cam_pos: Vector3) -> void:
 		node.scale = Vector3(b.w * S, 1.0, b.h * S))
 
 
-func _place_box(mi: MeshInstance3D, r: Array, top: float, kind := "") -> void:
+func _place_box(mi: MeshInstance3D, r: Array, top: float, kind := "", base := 0.0) -> void:
 	if kind == "scope":
 		# a function lives on its file's roof: highlight a thin slab there
 		var h: float = max(min(r[2], r[3]) * 0.03, 1e-9)
 		mi.position = _world_to_render(r[0], top, r[1])
 		mi.scale = Vector3(r[2] * S, h * S, r[3] * S)
 		return
-	mi.position = _world_to_render(r[0], 0.0, r[1])
-	mi.scale = Vector3(r[2] * S, max(top, 1e-9) * S, r[3] * S)
+	# a box stands on its parent's terrace, not on the ground
+	mi.position = _world_to_render(r[0], base, r[1])
+	mi.scale = Vector3(r[2] * S, max(top - base, 1e-9) * S, r[3] * S)
 
 
 func _update_highlights() -> void:
@@ -791,7 +792,7 @@ func _update_highlights() -> void:
 	_sel_fill.visible = tint and sel_scope
 	if has_sel:
 		for mi in [_sel_mask, _sel_line, _sel_fill]:
-			_place_box(mi, selection.rect, selection.top, selection.get("kind", ""))
+			_place_box(mi, selection.rect, selection.top, selection.get("kind", ""), float(selection.get("base", 0.0)))
 	_set_box_global("sel", selection.rect if has_sel and not sel_scope else [], float(selection.get("top", 0.0)),
 		Settings.get_value("highlight.selection"), Settings.get_value("highlight.fill") if tint else 0.0)
 	var hv: bool = hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover") 		and Settings.get_value("highlight.hover_style") != "off"
@@ -801,7 +802,7 @@ func _update_highlights() -> void:
 	_hov_line.visible = hsil
 	if hv:
 		for mi in [_hov_mask, _hov_line]:
-			_place_box(mi, hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""))
+			_place_box(mi, hover.rect, float(hover.get("top", 0.0)), hover.get("kind", ""), float(hover.get("base", 0.0)))
 	_set_box_global("hov", hover.rect if htint else [], float(hover.get("top", 0.0)),
 		Settings.get_value("highlight.hover"), float(Settings.get_value("highlight.fill")) * 0.6)
 	# pixel size for the silhouette's constant-width band
@@ -1033,14 +1034,14 @@ func _on_reply(id: int, data: Dictionary) -> void:
 
 
 ## Shows a selection made elsewhere (no signal).
-func set_selection(rect: Array, top: float, kind := "") -> void:
-	selection = {"rect": rect, "top": top, "kind": kind}
+func set_selection(rect: Array, top: float, kind := "", base := 0.0) -> void:
+	selection = {"rect": rect, "top": top, "kind": kind, "base": base}
 	_update_highlights()
 	_overlay.queue_redraw()
 
 
-func select(id: int, rect: Array, top: float, kind := "") -> void:
-	selection = {"rect": rect, "top": top, "kind": kind}
+func select(id: int, rect: Array, top: float, kind := "", base := 0.0) -> void:
+	selection = {"rect": rect, "top": top, "kind": kind, "base": base}
 	selected.emit(id)
 	_update_highlights()
 	_overlay.queue_redraw()
