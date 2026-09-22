@@ -75,6 +75,8 @@ func _render() -> void:
 		t += "[color=%s]class[/color]  %s\n" % [dim, ", ".join(n.classes)]
 	if n.has("scope"):
 		t += "[color=%s]scope[/color]  %s\n" % [dim, n.scope]
+	if n.has("cluster"):
+		t += _cluster(n.cluster, dim)
 	t += "\n"
 	if n.has("fileMetrics"):
 		var fm: Dictionary = n.fileMetrics
@@ -127,6 +129,37 @@ func _list(r: Dictionary, dir: String, title: String, color_id: String) -> Strin
 	if total > seen.size():
 		t += "   [color=%s]… %d more[/color]\n" % [_hex("text3"), total - seen.size()]
 	return t
+
+
+## A file's cluster (click frames its home folder), or the clusters a
+## folder's files belong to.
+func _cluster(c: Dictionary, dim: String) -> String:
+	if c.has("of"):
+		return "[color=%s]cluster[/color]  %s\n" % [dim, _cluster_link(c.of)]
+	if c.get("hub", false):
+		return "[color=%s]cluster[/color]  [color=%s]■[/color] hub · imported by much of the code\n" % [dim, _rgb(c.color)]
+	if c.get("none", false):
+		return "[color=%s]cluster  none[/color]\n" % dim
+	var parts: Array = c.get("parts", [])
+	if parts.is_empty():
+		return ""
+	var t := "[color=%s]clusters[/color]  %d, over %s clustered files\n" % [dim, int(c.spread), Fmt.num(c.clustered)]
+	for p in parts:
+		var share := "%d%%" % int(round(float(p.share) * 100.0))
+		if p.get("hub", false):
+			t += "   %s  [color=%s]■[/color] hubs\n" % [share, _rgb(p.color)]
+		else:
+			t += "   %s  %s\n" % [share, _cluster_link(p)]
+	return t
+
+
+static func _cluster_link(p: Dictionary) -> String:
+	var name := str(p.name) if str(p.name) != "" else "unnamed"
+	return "[color=%s]■[/color] [url=%d]%s[/url]" % [_rgb(p.color), int(p.home), _esc(name)]
+
+
+static func _rgb(c: Array) -> String:
+	return "#" + Color(c[0], c[1], c[2]).to_html(false)
 
 
 static func _esc(s) -> String:

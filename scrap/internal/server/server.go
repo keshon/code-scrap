@@ -286,8 +286,10 @@ func (s *Server) rebuild() {
 	if git != nil {
 		m = m.WithGit(git, gitTime)
 	}
-	if view.Color == codemap.ColorCluster {
-		m = m.WithClusters(s.clustersFor(base))
+	// clusters color the cluster lens and fill the Inspector's cluster row;
+	// until they are ready the map is served without them
+	if c := s.clustersFor(base); c != nil {
+		m = m.WithClusters(c)
 	}
 	s.install(m.WithView(view), precise)
 }
@@ -298,22 +300,31 @@ type clusterKey struct {
 }
 
 // clustersFor returns the clustering of base under the current git history,
-// computing it when either changed.
+// or nil while it is being computed in the background (a rebuild follows).
 func (s *Server) clustersFor(base *codemap.Map) *codemap.Clustering {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	key := clusterKey{base, s.gitTime}
-	c, history, fresh := s.clusters, s.history, s.clusterKey == key
-	s.mu.Unlock()
-	if c != nil && fresh {
-		return c
+	if s.clusterKey == key {
+		return s.clusters // nil while computing
 	}
-	t := time.Now()
-	c = base.Cluster(history, codemap.DefaultClusterOptions)
-	log.Printf("clusters: %d (%d hubs, %d commits) in %d ms", len(c.Clusters), len(c.Hubs), len(history), time.Since(t).Milliseconds())
-	s.mu.Lock()
-	s.clusters, s.clusterKey = c, key
-	s.mu.Unlock()
-	return c
+	s.clusters, s.clusterKey = nil, key
+	history := s.history
+	go func() {
+		t := time.Now()
+		c := base.Cluster(history, codemap.DefaultClusterOptions)
+		s.mu.Lock()
+		current := s.clusterKey == key
+		if current {
+			s.clusters = c
+		}
+		s.mu.Unlock()
+		if current {
+			log.Printf("clusters: %d (%d hubs, %d commits) in %d ms", len(c.Clusters), len(c.Hubs), len(history), time.Since(t).Milliseconds())
+			s.rebuild()
+		}
+	}()
+	return nil
 }
 
 func (s *Server) install(m *codemap.Map, precise bool) {

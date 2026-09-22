@@ -89,7 +89,7 @@ The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lin
 - scopes: `scope` (the kind);
 - function scopes: `metrics` (`complexity`, `params`, `nesting`, `lines`).
 
-`ancestors: [[id, name], …]` runs from the root down to the parent (for breadcrumbs).
+`ancestors: [[id, name], …]` runs from the root down to the parent (for breadcrumbs). `cluster` appears once clusters are computed (in the background after each index or git load): for a file `{"of": {name, color, home, homePath, files}}`, `{"hub": true, color}` or `{"none": true}`; for a folder `{"parts": [{name, color, home, homePath, files, share} | {hub, color, share}, …], "spread", "clustered"}` — up to five clusters its files belong to, biggest share first.
 
 ### `pick`
 

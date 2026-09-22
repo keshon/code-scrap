@@ -1,7 +1,9 @@
 package server
 
 import (
+	"cmp"
 	"encoding/binary"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -152,7 +154,57 @@ func nodeInfo(st *state, id int32) map[string]any {
 			}
 		}
 	}
+	if c := clusterInfo(m, id); c != nil {
+		out["cluster"] = c
+	}
 	return out
+}
+
+// clusterInfo tells which cluster a file belongs to, or which clusters a
+// folder's files belong to (biggest share first); nil without clusters.
+func clusterInfo(m *codemap.Map, id int32) map[string]any {
+	c := m.Clusters
+	if c == nil {
+		return nil
+	}
+	entry := func(k int32) map[string]any {
+		x := &c.Clusters[k]
+		return map[string]any{"name": x.Name, "color": tile.ClusterColor(x.Hue), "home": x.Home, "homePath": m.Path(x.Home), "files": x.Files}
+	}
+	n := &m.Nodes[id]
+	if n.Kind != codemap.KindDir {
+		switch k := m.ClusterOf(n.File); {
+		case k >= 0:
+			return map[string]any{"of": entry(k)}
+		case k == codemap.ClusterHub:
+			return map[string]any{"hub": true, "color": tile.HubColor}
+		}
+		return map[string]any{"none": true}
+	}
+	count := map[int32]int{}
+	total := 0
+	for fi := range m.Files {
+		if f := m.Files[fi].Node; f > id && f < n.End {
+			if k := c.Of[fi]; k >= 0 || k == codemap.ClusterHub {
+				count[k]++
+				total++
+			}
+		}
+	}
+	keys := slices.Collect(maps.Keys(count))
+	slices.SortFunc(keys, func(a, b int32) int { return cmp.Or(cmp.Compare(count[b], count[a]), cmp.Compare(a, b)) })
+	var parts []map[string]any
+	for _, k := range keys[:min(len(keys), 5)] {
+		var e map[string]any
+		if k == codemap.ClusterHub {
+			e = map[string]any{"hub": true, "color": tile.HubColor}
+		} else {
+			e = entry(k)
+		}
+		e["share"] = float64(count[k]) / float64(total)
+		parts = append(parts, e)
+	}
+	return map[string]any{"parts": parts, "spread": len(keys), "clustered": total}
 }
 
 // ancestors lists [id, name] from the root down to the node's parent.
