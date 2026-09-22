@@ -164,6 +164,23 @@ func nodeInfo(st *state, id int32) map[string]any {
 	return out
 }
 
+// architecture answers the "arch" op: the cluster graph the architecture
+// view draws, or a note that the clustering is still being computed.
+func (s *Server) architecture(st *state) map[string]any {
+	c := st.m.Clusters
+	if c == nil {
+		return map[string]any{"op": "arch", "pending": true}
+	}
+	a := st.m.Architecture(c, codemap.DefaultArchOptions)
+	out := map[string]any{"op": "arch", "arch": a, "colors": map[string]any{}}
+	colors := map[string]any{}
+	for _, n := range a.Nodes {
+		colors[strconv.Itoa(int(n.Cluster))] = tile.ClusterColor(n.Hue)
+	}
+	out["colors"] = colors
+	return out
+}
+
 // clusterInfo tells which cluster a file belongs to, or which clusters a
 // folder's files belong to (biggest share first); nil without clusters.
 func clusterInfo(m *codemap.Map, id int32) map[string]any {

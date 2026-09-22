@@ -124,6 +124,7 @@ scrap render -file <substr> -lh 11 -n 4 <path> out.png   preview tiles around a 
 scrap serve  [-addr host:port] [path]          WebSocket API for the viewers
 scrap graph  [-git-since 24.months] -o g.json <path>  file graph (imports, calls, co-change) as JSON
 scrap clusters [-res 1] [-git-since 12.months] <path> the clusters the cluster lens shows
+scrap arch   [-groups 8] [-json] <path>        the architecture view: clusters, groups, flow
 ```
 
 ## Status

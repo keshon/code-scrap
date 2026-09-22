@@ -26,6 +26,8 @@ type Clustering struct {
 	Of       []int32   // by file index: cluster index, ClusterNone or ClusterHub
 	Clusters []Cluster // biggest first
 	Hubs     []int32   // hub file indices, most imported first
+
+	graph *Graph // the relation graph it was built from (for Architecture)
 }
 
 type Cluster struct {
@@ -211,6 +213,7 @@ func (m *Map) Cluster(history [][]string, o ClusterOptions) *Clustering {
 		return cmp.Compare(importers[g.nodeOf[b]], importers[g.nodeOf[a]])
 	})
 
+	res.graph = g
 	m.nameClusters(res, g, label)
 	m.homeClusters(res)
 	colorClusters(res, adj, label)

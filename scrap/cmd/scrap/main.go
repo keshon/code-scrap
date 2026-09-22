@@ -16,6 +16,7 @@ usage:
   scrap search [flags] <path> <prefix>         symbol prefix search
   scrap graph  [flags] <path>                  export the file relation graph as JSON
   scrap clusters [flags] <path>                print file clusters (the cluster lens)
+  scrap arch   [flags] <path>                  print the architecture view (clusters, groups, flow)
   scrap render [flags] <path> <z> <x> <y> <out.png>  render one tile (debugging)
   scrap serve  [flags] [path]                  index and serve the viewer API
   scrap atlas  [-font file] <out.png>          write the code-font glyph atlas
@@ -55,6 +56,8 @@ func main() {
 		err = cmdStats(os.Args[2:])
 	case "search":
 		err = cmdSearch(os.Args[2:])
+	case "arch":
+		err = cmdArch(os.Args[2:])
 	case "clusters":
 		err = cmdClusters(os.Args[2:])
 	case "graph":

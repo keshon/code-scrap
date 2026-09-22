@@ -109,3 +109,58 @@ func cmdClusters(args []string) error {
 	}
 	return nil
 }
+
+func cmdArch(args []string) error {
+	fs := flag.NewFlagSet("arch", flag.ExitOnError)
+	var c common
+	c.register(fs)
+	since := fs.String("git-since", "12.months", `co-change history window ("" = all history)`)
+	co := codemap.DefaultClusterOptions
+	fs.Float64Var(&co.Resolution, "res", co.Resolution, "cluster resolution: higher = more, smaller clusters")
+	o := codemap.DefaultArchOptions
+	fs.IntVar(&o.Groups, "groups", o.Groups, "most groups wanted")
+	fs.Float64Var(&o.MinEdge, "minedge", o.MinEdge, "drop lifted edges lighter than this")
+	asJSON := fs.Bool("json", false, "print the whole thing as JSON")
+	fs.Parse(args)
+	if fs.NArg() != 1 {
+		usage()
+	}
+	m, err := build(c, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr)
+	var history [][]string
+	if !c.noGit {
+		if h, err := gitlog.ReadHistory(context.Background(), m.Root, *since); err == nil {
+			history = h.Commits
+		}
+	}
+	t := time.Now()
+	a := m.Architecture(m.Cluster(history, co), o)
+	if *asJSON {
+		e := json.NewEncoder(os.Stdout)
+		e.SetIndent("", " ")
+		return e.Encode(a)
+	}
+	fmt.Printf("%d clusters · %d groups · %d layers · %d edges · %d ms\n",
+		len(a.Nodes), len(a.Groups), a.Layers, len(a.Edges), time.Since(t).Milliseconds())
+	fmt.Printf("files: %d clustered · %d unclustered · %d hubs\n", a.Files.Clustered, a.Files.Unclustered, a.Files.Hubs)
+	for _, g := range a.Groups {
+		fmt.Printf("\nG%d %-34s %5d files\n", g.ID, g.Name, g.Files)
+		for _, ci := range g.Clusters {
+			n := a.Nodes[ci]
+			fmt.Printf("   L%d #%-3d %-44s %5d files  %s\n", n.Layer, n.Cluster, n.Name, n.Files, n.HomePath)
+		}
+	}
+	fmt.Println("\nheaviest lifted edges (from → to):")
+	for _, e := range a.Edges[:min(len(a.Edges), 20)] {
+		fmt.Printf("   %6.0f  #%-3d %-30s → #%-3d %-30s  (imports %.0f · calls %.0f · co-change %.0f)\n",
+			e.Weight, e.From, a.Nodes[e.From].Name, e.To, a.Nodes[e.To].Name, e.Imports, e.Calls, e.CoChange)
+	}
+	fmt.Println("\nlandmarks:")
+	for _, h := range a.Hubs {
+		fmt.Printf("   %5d  %s\n", h.Importers, h.Path)
+	}
+	return nil
+}
