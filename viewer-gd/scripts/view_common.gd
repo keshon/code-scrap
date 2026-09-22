@@ -97,7 +97,8 @@ static func draw_labels(o: CanvasItem, placed: Array) -> void:
 				o.draw_rect(Rect2(r.position, Vector2(3, r.size.y)), col)
 				o.draw_string(font, base + Vector2(8, 0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col.lerp(Color.WHITE, 0.55))
 			1:
-				o.draw_rect(r, Color(bg, 0.82))
+				if not c.get("plain", false):
+					o.draw_rect(r, Color(bg, 0.82))
 				var chip := Rect2(r.position + Vector2(4, r.size.y * 0.5 - 3), Vector2(6, 6))
 				o.draw_rect(chip, ext_color(c.text))
 				o.draw_string(font, base + Vector2(13, 0), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text2)

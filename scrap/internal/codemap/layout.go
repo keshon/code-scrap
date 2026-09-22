@@ -8,9 +8,11 @@ import (
 
 // Layout constants, relative to a box's shorter side.
 const (
-	padFrac    = 0.004 // inner padding
-	headerFrac = 0.020 // label strip on top of dirs and files
-	colGap     = 4     // chars between text columns
+	padFrac       = 0.004 // inner padding
+	headerFrac    = 0.020 // label strip on top of dirs and files
+	dirHeaderFrac = 0.045 // folder header band (View.Headers) of the whole map…
+	dirHeaderMax  = 0.13  // …growing up to this for small folders
+	colGap        = 4     // chars between text columns
 
 	// DefaultCharAspect is a monospace glyph's advance / line height with
 	// IDE-like line spacing (Consolas: 0.55 em advance, 1.36 em lines).
@@ -20,18 +22,30 @@ const (
 	WorldAspect = 0.625
 )
 
-// Header returns the label strip of a dir or file box.
-func Header(r Rect) Rect {
-	m := r.Min()
-	p := m * padFrac
-	return rect(r.X+p, r.Y+p, r.W-2*p, m*headerFrac)
+// headerFrac is the header height of a box of kind k with shorter side s,
+// relative to s. Folder header bands take a bigger share of small folders,
+// so their names become readable a level earlier while zooming in.
+func (m *Map) headerFrac(k Kind, s float64) float64 {
+	if k == KindDir && m.View.Headers {
+		return min(dirHeaderFrac*math.Pow(WorldAspect/max(s, 1e-12), 0.25), dirHeaderMax)
+	}
+	return headerFrac
+}
+
+// Header returns the label strip of a dir or file node: the folder header
+// band when View.Headers is on.
+func (m *Map) Header(id int32) Rect {
+	n := &m.Nodes[id]
+	s := n.Rect.Min()
+	p := s * padFrac
+	return rect(n.Rect.X+p, n.Rect.Y+p, n.Rect.W-2*p, s*m.headerFrac(n.Kind, s))
 }
 
 // content returns the area below the header where children or text go.
-func content(r Rect) Rect {
-	m := r.Min()
-	p := m * padFrac
-	h := m * headerFrac
+func (m *Map) content(r Rect, k Kind) Rect {
+	s := r.Min()
+	p := s * padFrac
+	h := s * m.headerFrac(k, s)
 	return rect(r.X+p, r.Y+p+h, r.W-2*p, max(r.H-2*p-h, 0))
 }
 
@@ -105,7 +119,7 @@ func (m *Map) layoutNode(id int32) {
 	n := &m.Nodes[id]
 	switch n.Kind {
 	case KindDir:
-		inner := content(n.Rect)
+		inner := m.content(n.Rect, KindDir)
 		ws := make([]float64, len(n.Children))
 		for i, c := range n.Children {
 			ws[i] = m.Nodes[c].Weight
@@ -121,7 +135,7 @@ func (m *Map) layoutNode(id int32) {
 			m.layoutNode(c)
 		}
 	case KindFile:
-		m.layoutText(&m.Files[n.File], content(n.Rect))
+		m.layoutText(&m.Files[n.File], m.content(n.Rect, KindFile))
 		f := &m.Files[n.File]
 		for _, sid := range f.Scopes {
 			s := &m.Nodes[sid]

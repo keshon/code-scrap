@@ -700,6 +700,8 @@ func _draw_labels() -> void:
 	var view := Rect2(Vector2.ZERO, size)
 	var fs: int = Settings.get_value("labels.font_size")
 	var min_box: float = Settings.get_value("labels.min_box_px")
+	var headers: bool = Settings.get_value("look.headers")
+	var heads := []   # folder names printed in their header bands
 	for key: Vector3i in _tiles:
 		var rec: TileRec = _tiles[key]
 		if not rec.node.visible:
@@ -712,6 +714,11 @@ func _draw_labels() -> void:
 			var r := Rect2(world_to_screen(rec.label_rects[i * 4], rec.label_rects[i * 4 + 1]),
 				Vector2(rec.label_rects[i * 4 + 2] * zoom, rec.label_rects[i * 4 + 3] * zoom))
 			var kind := rec.label_kinds[i]
+			if headers and kind == 0:
+				# r is the header band: the name goes inside it, sized to fit
+				if r.size.y >= 9.0 and r.size.x >= 30.0 and view.intersects(r):
+					heads.append({"rect": r, "text": rec.label_texts[i], "color": rec.label_colors[i]})
+				continue
 			if kind == 2:
 				if r.size.y < 7.0 or r.size.x < 30.0:
 					continue
@@ -729,13 +736,40 @@ func _draw_labels() -> void:
 				c.pos = Vector2(max(r.position.x, 0.0) + 2.0, max(r.position.y, 0.0) + 1.0)
 				if kind == 1:
 					c.size = max(fs - 1, 8)
+					c.plain = headers
 					# zoomed out, the folder's tab sits where the first file's
 					# name goes: then the name moves just below it (r is the
 					# file's header strip, 2% of its shorter side, so the box
 					# itself is always tall enough)
 					c.alts = [c.pos + Vector2(0, fs + 7), c.pos + Vector2(0, 2 * (fs + 7))]
 			cand.append(c)
+	_draw_heads(heads, fs)
 	ViewCommon.draw_labels(o, ViewCommon.place_labels(cand, Settings.get_value("labels.max")))
+
+
+## Folder names inside their header bands (folder headers mode). Bands
+## never overlap, so no placement is needed: each name fits its band.
+func _draw_heads(heads: Array, fs: int) -> void:
+	var font := Style.font("ui", 600)
+	var ink := Color(0.05, 0.055, 0.07)
+	for h in heads:
+		var r: Rect2 = h.rect
+		var size := clampi(int(r.size.y * 0.7), 9, fs + 4)
+		var left := maxf(r.position.x, 0.0) + 6.0
+		var max_w := r.end.x - left - 6.0
+		var text: String = h.text
+		var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+		if tw > max_w:
+			var keep := int(text.length() * max_w / tw) - 1
+			if keep < 2:
+				continue
+			text = text.substr(0, keep) + "…"
+		# centered in the band while it is name-sized; a tall band (zoomed
+		# in far) keeps the name at its top, where headers read
+		var band := minf(r.size.y, size * 2.2)
+		var base_y := maxf(r.position.y, 0.0) + (band + size * 0.72) * 0.5
+		base_y = minf(base_y, r.end.y - size * 0.25)  # never below the band
+		_overlay.draw_string(font, Vector2(left, base_y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, ink)
 
 
 # ---------------------------------------------------------------- relations

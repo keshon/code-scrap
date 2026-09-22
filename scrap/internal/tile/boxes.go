@@ -56,9 +56,13 @@ type Boxes struct {
 }
 
 const (
-	minBoxPx   = 1.5 // smaller boxes are culled
-	minLabelPx = 22  // shorter boxes get no label
+	minBoxPx         = 1.5 // smaller boxes are culled
+	minLabelPx       = 22  // shorter boxes get no label
+	minHeaderLabelPx = 8   // folder header bands lower than this carry no name
 )
+
+// KindHeader is the instance kind of a folder header band (2D, View.Headers).
+const KindHeader = 4
 
 // BoxTile builds the vector tile for k, flat (2D) or extruded (3D).
 func BoxTile(m *codemap.Map, k Key, is3D bool) *Boxes {
@@ -101,8 +105,16 @@ func (b *Boxes) add(m *codemap.Map, id int32, r, tr codemap.Rect, scale float64)
 	n := &m.Nodes[id]
 	c := BoxColor(m, n)
 	b.push(r, tr, c, float32(n.Kind), float32(n.Depth), n.Top, id)
-	if r.Min()*scale >= minLabelPx {
-		h := codemap.Header(r)
+	headers := m.View.Headers && n.Kind == codemap.KindDir && !b.is3D
+	if headers {
+		// the folder's header band: its own instance, so tiles cutting
+		// through a header still paint it whole
+		if h := m.Header(id); h.H*scale >= 1 {
+			b.push(h, tr, c, KindHeader, float32(n.Depth), n.Top, id)
+		}
+	}
+	if r.Min()*scale >= minLabelPx || (headers && m.Header(id).H*scale >= minHeaderLabelPx) {
+		h := m.Header(id)
 		if b.is3D && n.Kind == codemap.KindDir {
 			// 3D folder labels get the whole box, so the viewer can print
 			// the name on the wall that faces the camera

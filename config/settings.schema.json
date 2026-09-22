@@ -79,6 +79,15 @@
           "desc": "A gutter with line numbers left of the code, like an editor."
         },
         {
+          "id": "look.headers",
+          "surface": "display",
+          "type": "bool",
+          "default": false,
+          "scope": "server",
+          "label": "Folder headers",
+          "desc": "Folders get a header band in their color with the name inside, instead of outlines and floating name tags (2D)."
+        },
+        {
           "id": "viewport.hover",
           "surface": "display",
           "type": "bool",

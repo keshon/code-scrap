@@ -4,7 +4,9 @@ render_mode unshaded;
 // One instance per box piece (a box clipped to a tile).
 // INSTANCE_CUSTOM = (edge mask, kind, depth, trueMin / pieceWidth)
 //   edge mask: 1 left, 2 top, 4 right, 8 bottom — the box's real edges
-//   kind: 0 dir, 1 file, 2 scope (outline only)
+//   kind: 0 dir, 1 file, 2 scope (outline only), 4 folder header band
+//   (folder headers mode: folders drop their outline, files are cells
+//   parted by dark seams)
 // COLOR = the area's hue.
 //
 // Outlines are pixel-exact: each edge snaps to the nearest pixel boundary
@@ -16,6 +18,7 @@ global uniform float scrap_line_min_box;  // boxes smaller than this: no outline
 global uniform float scrap_depth_tone;    // fills lighten with nesting depth
 global uniform float scrap_roof_tone;     // files: lift behind the code text
 global uniform float scrap_roof_fill;     // 0 auto, 1 dark, 2 colored (as in 3D)
+global uniform float scrap_headers;       // 1 = folder headers mode
 
 #include "res://shaders/scope_outline.gdshaderinc"
 
@@ -52,7 +55,12 @@ void fragment() {
 		: scrap_roof_fill > 0.5 ? smoothstep(8.0, 90.0, true_px)
 		: smoothstep(160.0, 520.0, true_px);
 	vec3 hue = v_hue.rgb;
-	if (v_custom.y > 1.5) {
+	if (v_custom.y > 3.5) {
+		// folder header band: the folder's color, a darker rule at its real
+		// bottom (a band cut by tile borders must not rule every piece)
+		float rule = (edges & 8) != 0 ? step(far.y, 1.0) : 0.0;
+		COLOR = vec4(mix(hue * 0.8, hue * 0.35, rule), 1.0);
+	} else if (v_custom.y > 1.5) {
 		float a = scope_outline(near, far, edges, fc, v_custom.y, v_custom.z, w)
 			* smoothstep(scrap_line_min_box * 0.5, scrap_line_min_box, true_px);
 		COLOR = vec4(hue, a);
@@ -64,6 +72,13 @@ void fragment() {
 		if (v_custom.y > 0.5) {
 			fill += vec3(scrap_roof_tone) * big;
 		}
-		COLOR = vec4(mix(fill, hue * 0.95, outline), 1.0);
+		if (scrap_headers > 0.5) {
+			// folders are told apart by their header band and padding, files
+			// by dark seams: no bright outlines competing with the names
+			float seam = v_custom.y > 0.5 ? outline : 0.0;
+			COLOR = vec4(mix(fill, vec3(0.02, 0.022, 0.028), seam), 1.0);
+		} else {
+			COLOR = vec4(mix(fill, hue * 0.95, outline), 1.0);
+		}
 	}
 }

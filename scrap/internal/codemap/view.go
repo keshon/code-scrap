@@ -32,6 +32,9 @@ type View struct {
 	LineNumbers bool `json:"lineNumbers,omitempty"`
 	// Palette names the area hue set (tile.Palettes); "" = the default.
 	Palette string `json:"palette,omitempty"`
+	// Headers gives folders a tall header band that carries their name
+	// (the viewer paints it) instead of a thin label strip.
+	Headers bool `json:"headers,omitempty"`
 }
 
 // Sibling orders and layout algorithms (View.Order, View.Algorithm).

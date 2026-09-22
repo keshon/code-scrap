@@ -151,6 +151,10 @@ scrap_roof_fill={
 "type": "float",
 "value": 0.0
 }
+scrap_headers={
+"type": "float",
+"value": 0.0
+}
 
 [rendering]
 

@@ -14,8 +14,10 @@ void vertex() {
 void fragment() {
 	vec4 c = code_text(UV);
 	// roofs seen nearly edge-on: the text is unreadable there and only
-	// adds noise, so it fades out
-	c *= smoothstep(0.08, 0.3, abs(dot(NORMAL, VIEW)));
+	// adds noise, so it fades out. Roofs always face world up; the mesh
+	// normal is not trusted (a missing one made a band under the camera).
+	vec3 up = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+	c *= smoothstep(0.08, 0.3, abs(dot(up, VIEW)));
 	ALBEDO = c.rgb;
 	ALPHA = c.a;
 }

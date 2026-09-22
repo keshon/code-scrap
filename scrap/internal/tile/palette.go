@@ -148,6 +148,11 @@ func BoxColor(m *codemap.Map, n *codemap.Node) [4]float32 {
 	}
 	if n.Kind != codemap.KindDir {
 		f := &m.Files[n.File]
+		if m.View.Headers && n.Kind == codemap.KindFile {
+			// folder headers: the area color belongs to folders (bands and
+			// margins), files are near-neutral cells so folders stand out
+			c = mix(c, grey, 0.72)
+		}
 		switch {
 		case f.Class.Has(codemap.ClassBinary | codemap.ClassData):
 			c = grey

@@ -342,11 +342,14 @@ func _make_plane() -> ArrayMesh:
 	var c := [Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(1, 0, 1), Vector3(0, 0, 1)]
 	var v := PackedVector3Array()
 	var uv := PackedVector2Array()
+	var n := PackedVector3Array()
 	for i in [0, 1, 2, 0, 2, 3]:
 		v.append(c[i])
 		uv.append(Vector2(c[i].x, c[i].z))
+		n.append(Vector3.UP)  # without normals Godot assumes +Z, which lies in the roof
 	arrays[Mesh.ARRAY_VERTEX] = v
 	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_NORMAL] = n
 	var m := ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return m

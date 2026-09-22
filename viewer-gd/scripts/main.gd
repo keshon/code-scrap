@@ -443,7 +443,8 @@ func _send_server_settings() -> void:
 	client.request("options", {"weights": weights, "rules": Settings.get_value("importance.rules"),
 		"gitSince": Settings.get_value("git.since"),
 		"look": {"order": Settings.get_value("layout.order"), "algorithm": Settings.get_value("layout.algorithm"),
-			"palette": Settings.get_value("look.palette"), "lineNumbers": Settings.get_value("text.line_numbers")}})
+			"palette": Settings.get_value("look.palette"), "lineNumbers": Settings.get_value("text.line_numbers"),
+			"headers": Settings.get_value("look.headers")}})
 
 
 func _on_setting_changed(id: String, _v: Variant) -> void:

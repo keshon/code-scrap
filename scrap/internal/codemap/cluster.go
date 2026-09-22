@@ -72,16 +72,18 @@ func (m *Map) Cluster(history [][]string, o ClusterOptions) *Clustering {
 		}
 	}
 
-	// hubs: imported by a large share of the code
-	importers := make([]int, n)
+	// hubs: imported by a large share of the code. Weighted, so a Go
+	// package import (spread over its files) doesn't make every file of a
+	// popular package a hub.
+	importers := make([]float64, n)
 	for _, e := range g.Edges {
 		if e.Kind == "import" && code[e.S] && code[e.T] {
-			importers[e.T]++
+			importers[e.T] += e.W
 		}
 	}
 	hub := make([]bool, n)
 	for i := range hub {
-		hub[i] = code[i] && importers[i] >= max(o.HubMin, int(o.HubShare*float64(nCode)))
+		hub[i] = code[i] && importers[i] >= max(float64(o.HubMin), o.HubShare*float64(nCode))
 	}
 
 	// one undirected weight per pair of files
