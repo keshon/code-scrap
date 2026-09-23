@@ -35,6 +35,9 @@ type View struct {
 	// Headers gives folders a tall header band that carries their name
 	// (the viewer paints it) instead of a thin label strip.
 	Headers bool `json:"headers,omitempty"`
+	// EvenSteps makes every terrace and building the same height instead
+	// of scaling the step with the box, so height reads as depth alone.
+	EvenSteps bool `json:"evenSteps,omitempty"`
 }
 
 // Sibling orders and layout algorithms (View.Order, View.Algorithm).
@@ -44,6 +47,9 @@ const (
 	OrderKind        = "kind"
 	LayoutSquarified = "squarified"
 	LayoutStrip      = "strip"
+	LayoutRows       = "rows"
+	LayoutColumns    = "columns"
+	LayoutCards      = "cards"
 )
 
 // Height modes besides the metrics.

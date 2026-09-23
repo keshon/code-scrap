@@ -444,7 +444,8 @@ func _send_server_settings() -> void:
 		"gitSince": Settings.get_value("git.since"),
 		"look": {"order": Settings.get_value("layout.order"), "algorithm": Settings.get_value("layout.algorithm"),
 			"palette": Settings.get_value("look.palette"), "lineNumbers": Settings.get_value("text.line_numbers"),
-			"headers": Settings.get_value("look.headers")}})
+			"headers": Settings.get_value("look.headers"),
+			"evenSteps": Settings.get_value("look.even_steps") == "even"}})
 
 
 func _on_setting_changed(id: String, _v: Variant) -> void:

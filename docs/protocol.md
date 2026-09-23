@@ -51,7 +51,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 | `search` | `q` (symbol-name prefix), `page`, `size` (≤ 500) | `search` |
 | `edges` | `node` | relations: imports (file level) |
 | `calls` | `node` | relations: syntax-level call graph |
-| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince`, `look: {order (size · name · kind), algorithm (squarified · strip), palette (pastel · neutral · cyan), lineNumbers, headers}` | no reply. The map rebuilds and a new `hello` follows when anything changed. |
+| `options` | any of `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince`, `look: {order (size · name · kind), algorithm (squarified · strip), palette (pastel · neutral · cyan), lineNumbers, headers, evenSteps}`; `algorithm` is squarified · strip · rows · columns · cards | no reply. The map rebuilds and a new `hello` follows when anything changed. |
 | `open` | `path` | new `hello` once indexed, or `{"op": "error", "error": …}` |
 
 ## Messages (server → viewer)

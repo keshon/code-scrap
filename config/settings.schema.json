@@ -600,6 +600,19 @@
           "desc": "Contrast between lit and shaded faces."
         },
         {
+          "id": "look.even_steps",
+          "surface": "view",
+          "type": "enum",
+          "options": [
+            "scaled",
+            "even"
+          ],
+          "default": "scaled",
+          "scope": "server",
+          "label": "Terrace step",
+          "desc": "3D: how tall each level is. scaled = the step grows with the box, so a big folder gets a tall terrace · even = every terrace and building is the same height, so height reads as depth in the tree and nothing else."
+        },
+        {
           "id": "look.bevel",
           "type": "float",
           "default": 0.0,

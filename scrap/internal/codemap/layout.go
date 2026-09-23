@@ -16,7 +16,8 @@ const (
 	// nearly the same width shares that band instead ("a / b / c"), so
 	// chains of one dominant folder don't stack bands.
 	headerMergeWidth = 0.88
-	colGap           = 4 // chars between text columns
+	colGap           = 4    // chars between text columns
+	cardGap          = 0.12 // LayoutCards: share of a card left as air
 
 	// DefaultCharAspect is a monospace glyph's advance / line height with
 	// IDE-like line spacing (Consolas: 0.55 em advance, 1.36 em lines).
@@ -96,6 +97,10 @@ func (m *Map) contentOf(id int32) Rect {
 // parent: top = parent top + step. Steps scale with the box, so the city looks
 // the same at every zoom level.
 const (
+	// With View.EvenSteps every box takes its step from the map instead of
+	// from its own size, so height means depth and nothing else.
+	evenSide = 0.2 * WorldAspect
+
 	dirStep    = 0.035 // HeightDepth: a clear terrace per directory level
 	fileStep   = 0.09
 	plinthStep = 0.012 // other modes: thin plinths keep the hierarchy readable
@@ -128,6 +133,9 @@ func (m *Map) elevate() {
 			base = m.Nodes[n.Parent].Top
 		}
 		s := n.Rect.Min()
+		if m.View.EvenSteps {
+			s = evenSide
+		}
 		switch n.Kind {
 		case KindDir:
 			if i > 0 {
@@ -168,9 +176,24 @@ func (m *Map) layoutNode(id int32) {
 			ws[i] = m.Nodes[c].Weight
 		}
 		var rects []Rect
-		if m.View.Algorithm == LayoutStrip {
+		switch m.View.Algorithm {
+		case LayoutStrip:
 			rects = treemap.Strip(ws, inner)
-		} else {
+		case LayoutRows, LayoutColumns:
+			// alternate direction with depth: bands within bands in one
+			// direction would shred a deep tree into hairlines
+			across := n.Depth%2 == 0
+			if m.View.Algorithm == LayoutColumns {
+				across = !across
+			}
+			if across {
+				rects = treemap.Rows(ws, inner)
+			} else {
+				rects = treemap.Columns(ws, inner)
+			}
+		case LayoutCards:
+			rects = treemap.Cards(ws, inner, cardGap)
+		default:
 			rects = treemap.Squarify(ws, inner)
 		}
 		for i, c := range n.Children {
