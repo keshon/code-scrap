@@ -6,7 +6,7 @@ extends PanelContainer
 signal action(name: String)             # keymap-style actions: frame_all, settings, …
 signal open_folder
 signal open_path(path: String)
-signal view_selected(three_d: bool)
+signal view_mode(mode: String)          # "2d" · "3d" · "arch"
 
 const SEARCH_W := 480.0
 
@@ -14,6 +14,7 @@ var search_field: LineEdit
 var _repo_btn: MenuButton
 var _v2d: Button
 var _v3d: Button
+var _varch: Button
 var _preset_opt: OptionButton
 var _preset_ids := []
 var _icon_buttons: Array[Button] = []
@@ -68,11 +69,13 @@ func _ready() -> void:
 	segs.add_theme_constant_override("separation", 2)
 	seg.add_child(segs)
 	var group := ButtonGroup.new()
-	_v2d = _segment("2D", "Flat map (Tab toggles)", group, func(): view_selected.emit(false))
+	_v2d = _segment("2D", "Flat map (Tab toggles)", group, func(): view_mode.emit("2d"))
 	_v2d.button_pressed = true
 	segs.add_child(_v2d)
-	_v3d = _segment("3D", "3D city (Tab toggles)", group, func(): view_selected.emit(true))
+	_v3d = _segment("3D", "3D city (Tab toggles)", group, func(): view_mode.emit("3d"))
 	segs.add_child(_v3d)
+	_varch = _segment("Arch", "Architecture: clusters, groups and the flow between them", group, func(): view_mode.emit("arch"))
+	segs.add_child(_varch)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -132,10 +135,11 @@ func set_repo(name: String, root: String) -> void:
 	_repo_btn.tooltip_text = root + "\nClick to open another folder or a recent repository"
 
 
-## Mirrors the 2D/3D switch without emitting.
-func set_3d(on: bool) -> void:
-	_v2d.set_pressed_no_signal(not on)
-	_v3d.set_pressed_no_signal(on)
+## Mirrors the view switch without emitting.
+func set_mode(mode: String) -> void:
+	_v2d.set_pressed_no_signal(mode == "2d")
+	_v3d.set_pressed_no_signal(mode == "3d")
+	_varch.set_pressed_no_signal(mode == "arch")
 
 
 func _fill_repo_menu() -> void:
