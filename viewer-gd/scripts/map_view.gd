@@ -998,10 +998,12 @@ func _arc_end(line: Array, box: Array, group: float) -> Dictionary:
 	if line != box and lr.size.y >= LINE_ANCHOR_PX and lr.size.x >= 6.0:
 		return {"point": Vector2(lr.position.x + minf(lr.size.x, 14.0), lr.get_center().y),
 			"rect": lr, "precise": true, "key": [lr.position.x, lr.position.y]}
+	# no readable line: aim at the head of the box (where a function's name
+	# and a file's first line are), not at the middle of its body
 	var br := rect_to_screen(box)
-	var c := br.get_center()
-	var k: Variant = _group_key(c, br, group)
-	return {"point": k if k is Vector2 else c, "rect": br, "precise": false, "key": k if k is Vector2 else c}
+	var head := Vector2(br.position.x + minf(br.size.x * 0.35, 30.0), br.position.y + minf(br.size.y * 0.25, 12.0))
+	var k: Variant = _group_key(br.get_center(), br, group)
+	return {"point": k if k is Vector2 else head, "rect": br, "precise": false, "key": k if k is Vector2 else head}
 
 
 func _group_key(p: Vector2, r: Rect2, group: float) -> Variant:
