@@ -85,20 +85,12 @@ Every control has one home ([docs/PLAN.md](docs/PLAN.md), "UI map").
 
 | Zone | What's there |
 |---|---|
-| Top bar | Explorer toggle, repository (open, recent), 2D / 3D / Arch, settings preset, **search** (files and folders by path, symbols by prefix; `>` for commands), settings |
+| Top bar | Explorer toggle, repository (open, recent), 2D / 3D, settings preset, **search** (files and folders by path, symbols by prefix; `>` for commands), settings |
 | Explorer (left) | the file tree, down to functions; follows the selection |
 | Viewport header | breadcrumb (click a segment to select it, › to list what is inside) · Camera menu · ☰ display toggles |
 | Legend (bottom right) | what colors and arcs mean; click an area to frame it |
 | Right pane | **Inspector** (with clickable imports / callers) · **View** (lenses, importance, relations) |
 | Status bar | server, index progress, hover, keymap hints, fps |
-
-### Architecture view (Arch)
-
-The third view answers a different question: not "where is much and where is hot", but "how is this built". The server clusters files by how they are connected — imports, resolved calls and files that change together in git — regardless of folders, gathers the clusters into groups and places them along the direction dependencies point: entry points left, what everything leans on right.
-
-It shows two levels, so the screen stays at about ten boxes: the groups, and the clusters of the group you open (Esc or right-click goes back). A box's height is how much code it holds, the curves are every file relation crossing that pair, and the line at the bottom names the landmark files no cluster holds because most of the code imports them. Click a box to select its folder, double-click to show that folder on the flat map.
-
-`scrap arch <path>` prints the same thing as text.
 
 ### Importance rules
 
@@ -132,7 +124,6 @@ scrap render -file <substr> -lh 11 -n 4 <path> out.png   preview tiles around a 
 scrap serve  [-addr host:port] [path]          WebSocket API for the viewers
 scrap graph  [-git-since 24.months] -o g.json <path>  file graph (imports, calls, co-change) as JSON
 scrap clusters [-res 1] [-git-since 12.months] <path> the clusters the cluster lens shows
-scrap arch   [-groups 8] [-json] <path>        the architecture view: clusters, groups, flow
 ```
 
 ## Status

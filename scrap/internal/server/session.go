@@ -259,10 +259,6 @@ func (ss *session) handle(req request) {
 		if st != nil {
 			resp = children(st, req.Node)
 		}
-	case "arch":
-		if st != nil {
-			resp = ss.srv.architecture(st)
-		}
 	case "search":
 		if st != nil {
 			resp = search(st, req.Q, req.Page, req.Size)

@@ -43,8 +43,6 @@ const COMMANDS := [
 var client: ScrapClient
 var map: MapView
 var city: CityView
-var arch: ArchView
-var _before_arch := "2d"          # the view the architecture view covered
 var toolbar: Toolbar
 var view_panel: ViewPanel
 var explorer: Explorer
@@ -125,7 +123,7 @@ func _build_ui() -> void:
 	toolbar.action.connect(_do_action)
 	toolbar.open_folder.connect(func(): _do_action("open_folder"))
 	toolbar.open_path.connect(func(p): client.request("open", {"path": p}))
-	toolbar.view_mode.connect(set_mode)
+	toolbar.view_selected.connect(set_view)
 
 	var body := HSplitContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -156,14 +154,6 @@ func _build_ui() -> void:
 	city.set_anchors_preset(Control.PRESET_FULL_RECT)
 	city.visible = false
 	views.add_child(city)
-	arch = ArchView.new()
-	arch.visible = false
-	arch.attach(client)
-	arch.picked.connect(func(id): select_and_frame(id, false))
-	arch.opened.connect(func(id):
-		set_mode("2d")
-		select_and_frame(id, true))
-	views.add_child(arch)
 
 	# viewport overlays; the map's tile levels use z up to 1000
 	header = ViewportHeader.new(client)
@@ -270,43 +260,8 @@ func is_3d() -> bool:
 	return city.visible
 
 
-## Which view is on screen: "2d", "3d" or "arch".
-func mode() -> String:
-	if arch.visible:
-		return "arch"
-	return "3d" if city.visible else "2d"
-
-
-## Switches the view. The architecture view sits beside the map and the
-## city rather than replacing either: leaving it shows whichever was up.
-func set_mode(m: String) -> void:
-	if m == mode():
-		return
-	toolbar.set_mode(m)
-	legend.set_hidden(m == "arch")
-	# the architecture view owns the whole viewport: the map's overlays
-	# (breadcrumb, minimap, legend) belong to the map
-	header.visible = m != "arch"
-	minimap.visible = m != "arch" and Settings.get_value("viewport.minimap")
-	if m == "arch":
-		_before_arch = mode()
-		map.visible = false
-		city.visible = false
-		arch.visible = true
-		arch.grab_focus()
-		return
-	arch.visible = false
-	map.visible = _before_arch != "3d"
-	city.visible = _before_arch == "3d"
-	if (m == "3d") != (_before_arch == "3d"):
-		set_view(m == "3d")
-	else:
-		toolbar.set_mode(m)
-	(city if m == "3d" else map).grab_focus()
-
-
 func set_view(three_d: bool) -> void:
-	toolbar.set_mode("3d" if three_d else "2d")
+	toolbar.set_3d(three_d)
 	view_panel.set_3d(three_d)
 	legend.set_3d(three_d)
 	if three_d == is_3d():
@@ -437,10 +392,7 @@ func _do_action(action: String) -> bool:
 			map.deselect()
 			city.deselect()
 		"toggle_view":
-			if mode() == "arch":
-				set_mode("2d")
-			else:
-				set_view(not is_3d())
+			set_view(not is_3d())
 		"select_parent":
 			if _selected_id >= 0:
 				_pending = {"parent": true}

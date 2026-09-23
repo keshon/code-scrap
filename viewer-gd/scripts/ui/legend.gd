@@ -16,7 +16,6 @@ var _search := false
 var _height := {}       # active height lens descriptor (3D)
 var _is3d := false
 var _collapsed := false
-var _hidden := false            # the architecture view has its own key
 
 
 func _ready() -> void:
@@ -43,12 +42,6 @@ func set_3d(on: bool) -> void:
 	_rebuild()
 
 
-## Hides the legend entirely (the architecture view explains itself).
-func set_hidden(on: bool) -> void:
-	_hidden = on
-	_rebuild()
-
-
 func set_relations(imports: bool, calls: bool) -> void:
 	_rel = {"imports": imports, "calls": calls}
 	_rebuild()
@@ -65,7 +58,7 @@ func _rebuild() -> void:
 		return
 	for c in _box.get_children():
 		c.queue_free()
-	visible = Settings.get_value("viewport.legend") and not _hidden
+	visible = Settings.get_value("viewport.legend")
 	var head := HBoxContainer.new()
 	var t := _title(_lens.get("long", "Top-level area") if not _collapsed else "Legend")
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL

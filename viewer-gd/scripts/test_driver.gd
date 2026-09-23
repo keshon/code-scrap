@@ -10,8 +10,6 @@ extends Node
 ##   --focus=1         fly to the first search hit's file instead of the line
 ##   --nofly           select search hits without flying to them
 ##   --view=3d         switch to the 3D city once connected (--yaw, --pitch, --dist, --home, --wheel=N)
-##   --view=arch       switch to the architecture view once connected
-##   --group=<n>       …and open its n-th group (after --wait/2)
 ##   --lens=height:churn,color:complexity,importance   apply lenses once git is loaded
 ##   --rel=imports,calls   turn relation arcs on (use with --search to select)
 ##   --settings=1      open the settings panel
@@ -71,18 +69,6 @@ func _ready() -> void:
 			shell._node_req = client.request("node", {"path": args.select}), CONNECT_ONE_SHOT)
 	if args.get("view", "") == "3d":
 		client.hello.connect(func(_i): _enter_3d(), CONNECT_ONE_SHOT)
-	if args.get("view", "") == "arch":
-		client.hello.connect(func(_i):
-			await get_tree().create_timer(0.8).timeout
-			shell.set_mode("arch"), CONNECT_ONE_SHOT)
-	if args.has("group"):
-		get_tree().create_timer(float(args.get("wait", 4)) * 0.6).timeout.connect(func():
-			var a = shell.arch
-			var groups: Array = a._arch.get("groups", [])
-			var i := clampi(int(args.group), 0, max(groups.size() - 1, 0))
-			if not groups.is_empty():
-				a._group = int(groups[i].id)
-				a._relayout())
 	if args.has("later"):
 		var kv := String(args.later)
 		var sid := kv.get_slice(":", 0)

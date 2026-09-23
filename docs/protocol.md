@@ -42,7 +42,6 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 | `font` | — | one binary font-atlas frame |
 | `node` | `node`, or `path` (a file or folder, stable across generations) | `node` |
 | `overview` | — | `{"op": "overview", "world", "boxes": [x, y, w, h, r, g, b, kind, …]}`: folders and files a few levels deep, big enough to see at minimap size |
-| `arch` | — | `arch` (the architecture view's cluster graph) |
 | `children` | `node` | `{"op": "children", "node", "items": [{node, name, kind, lines, kids, color}]}`: dirs, then files, then scopes |
 | `pick` | `x`, `y` (world), `scale` (px per world unit) | `pick` |
 | `pickRay` | `ray: [ox, oy, oz, dx, dy, dz]` (world units, Y up) | `pick` with `t` (ray distance) |
@@ -93,20 +92,6 @@ The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lin
 - function scopes: `metrics` (`complexity`, `params`, `nesting`, `lines`).
 
 `ancestors: [[id, name], …]` runs from the root down to the parent (for breadcrumbs). Folders carry `header`, their header band rect. `cluster` appears once clusters are computed (in the background after each index or git load): for a file `{"of": {name, color, home, homePath, files}}`, `{"hub": true, color}` or `{"none": true}`; for a folder `{"parts": [{name, color, home, homePath, files, share} | {hub, color, share}, …], "spread", "clustered"}` — up to five clusters its files belong to, biggest share first.
-
-### `arch`
-
-`{"op": "arch", "pending": true}` while the clustering is still being computed, else `{"op": "arch", "arch": {…}, "colors": {"<cluster>": [r, g, b]}}`.
-
-`arch` holds the cluster graph the architecture view draws:
-
-- `nodes`: one per cluster — `cluster` (its index), `name`, `group`, `hue`, `files`, `lines`, `home`/`homePath` (the folder most of it lives in), `level` (0 = entry point, 1 = what everything leans on) and its grid place `layer` (column) and `row`.
-- `edges`: `from`, `to` (From uses To), `imports`, `calls`, `cochange` and `weight`, the lifted sum of every file relation crossing that pair. Co-change has no direction and is repeated both ways.
-- `groups`: clusters that lean on each other, biggest first — `id`, `name`, `clusters`, `files`.
-- `hubs`: the landmark files no cluster holds, most depended on first — `node`, `path`, `importers`.
-- `layers`, `rows`: the grid's size. `files`: how many are clustered, unclustered or hubs.
-
-Levels solve the hierarchy equation of a directed network, so rings of clusters (which user interfaces always have) still order sensibly; columns come from the levels' ranking.
 
 ### `pick`
 
