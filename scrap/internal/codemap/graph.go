@@ -128,7 +128,8 @@ func (m *Map) Graph(history [][]string, o GraphOptions) *Graph {
 			if s < 0 {
 				continue
 			}
-			for _, to := range outs {
+			for _, dep := range outs {
+				to := dep.Node
 				if m.Nodes[to].Kind != KindDir {
 					if t := gid[to]; t >= 0 {
 						add(imports, s, t, "import", 1)

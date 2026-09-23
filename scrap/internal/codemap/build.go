@@ -64,9 +64,10 @@ type rawFile struct {
 	precise bool
 	scopes  []syntax.Scope
 	decls   []syntax.Decl
-	imports []string
+	imports []Import
 	js      *jsModule  // JS/TS import and export names
 	calls   [][]string // per scope: distinct callee names inside it
+	callAt  [][]int32  // …and the first line each is called on
 }
 
 // Build indexes the tree at root and lays it out.
@@ -147,7 +148,7 @@ func Build(root string, opt Options) (*Map, error) {
 	}
 
 	m := assemble(abs, top, files, opt)
-	imports := map[int32][]string{}
+	imports := map[int32][]Import{}
 	js := map[int32]*jsModule{}
 	for i := range m.Files {
 		f := &m.Files[i]
@@ -321,7 +322,7 @@ func analyze(f *rawFile, precise bool) {
 	var scan syntax.Scan
 	syntax.Tokenize(lines, f.lang, false, &scan)
 	f.scopes, f.decls = syntax.FindScopes(lines, f.lang, &scan)
-	defer func() { f.calls = callsPerScope(f.scopes, scan.Calls) }()
+	defer func() { f.calls, f.callAt = callsPerScope(f.scopes, scan.Calls) }()
 	if precise {
 		// Tree-sitter spans are exact, but tags queries skip some definition
 		// shapes (e.g. `const Foo = () => …`), so keep the heuristic's
@@ -335,11 +336,12 @@ func analyze(f *rawFile, precise bool) {
 
 // callsPerScope gives each scope the distinct names called directly inside
 // it (not in nested scopes), dropping the scope's own definition line.
-func callsPerScope(scopes []syntax.Scope, calls []syntax.Call) [][]string {
+func callsPerScope(scopes []syntax.Scope, calls []syntax.Call) ([][]string, [][]int32) {
 	if len(scopes) == 0 || len(calls) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([][]string, len(scopes))
+	at := make([][]int32, len(scopes))
 	seen := make([]map[string]bool, len(scopes))
 	for _, c := range calls {
 		best := -1
@@ -355,12 +357,14 @@ func callsPerScope(scopes []syntax.Scope, calls []syntax.Call) [][]string {
 		if seen[best] == nil {
 			seen[best] = map[string]bool{}
 		}
-		if !seen[best][c.Name] {
-			seen[best][c.Name] = true
-			out[best] = append(out[best], strings.Clone(c.Name)) // don't pin the file's text
+		if seen[best][c.Name] {
+			continue
 		}
+		seen[best][c.Name] = true
+		out[best] = append(out[best], c.Name)
+		at[best] = append(at[best], c.Line) // the first line it is called on
 	}
-	return out
+	return out, at
 }
 
 func mergeDecls(precise []syntax.Decl, scopes []syntax.Scope, heuristic []syntax.Decl) []syntax.Decl {
@@ -515,6 +519,9 @@ func (m *Map) addScopes(fileNode, fi int32, rf *rawFile, depth uint8) {
 		m.Files[fi].Scopes = append(m.Files[fi].Scopes, id)
 		if si < len(rf.calls) {
 			m.Nodes[id].Calls = rf.calls[si]
+			if si < len(rf.callAt) {
+				m.Nodes[id].CallAt = rf.callAt[si]
+			}
 			for _, c := range rf.calls[si] {
 				m.Callers[c] = append(m.Callers[c], id)
 			}

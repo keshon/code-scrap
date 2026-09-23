@@ -31,8 +31,8 @@ func (m *Map) imports(f, g int32) bool {
 		return false
 	}
 	gf := m.Files[m.Nodes[g].File].Node
-	for _, t := range m.Deps.Out[f] {
-		if t == gf || (m.Nodes[t].Kind == KindDir && gf > t && gf < m.Nodes[t].End) {
+	for _, dep := range m.Deps.Out[f] {
+		if t := dep.Node; t == gf || (m.Nodes[t].Kind == KindDir && gf > t && gf < m.Nodes[t].End) {
 			return true
 		}
 	}
@@ -69,6 +69,24 @@ func (m *Map) resolveCall(from int32, name string) int32 {
 	return -1
 }
 
+// callLine is the line the i-th call of a scope sits on (-1 unknown).
+func (m *Map) callLine(scope int32, i int) int32 {
+	if at := m.Nodes[scope].CallAt; i < len(at) {
+		return at[i]
+	}
+	return -1
+}
+
+// callLineOf is the line a scope calls name on (-1 when it doesn't).
+func (m *Map) callLineOf(scope int32, name string) int32 {
+	for i, c := range m.Nodes[scope].Calls {
+		if c == name {
+			return m.callLine(scope, i)
+		}
+	}
+	return -1
+}
+
 // CallsOf returns resolved call edges for a function scope, or for every
 // scope of a file: out = what they call, in = who calls them. Edges inside
 // the selection are skipped. Lists are capped at limit (totals are exact).
@@ -90,11 +108,11 @@ func (m *Map) CallsOf(id int32, limit int) (out, in []Edge, outTotal, inTotal in
 	lo, hi := id, m.Nodes[id].End
 	inside := func(n int32) bool { return n >= lo && n < hi }
 	for _, s := range sources {
-		for _, name := range m.Nodes[s].Calls {
+		for i, name := range m.Nodes[s].Calls {
 			if t := m.resolveCall(s, name); t >= 0 && !inside(t) {
 				outTotal++
 				if len(out) < limit {
-					out = append(out, Edge{s, t})
+					out = append(out, Edge{From: s, To: t, FromLine: m.callLine(s, i), ToSym: t, ToLine: m.Nodes[t].StartLine})
 				}
 			}
 		}
@@ -103,7 +121,7 @@ func (m *Map) CallsOf(id int32, limit int) (out, in []Edge, outTotal, inTotal in
 			if !inside(c) && m.resolveCall(c, m.Nodes[s].Name) == s {
 				inTotal++
 				if len(in) < limit {
-					in = append(in, Edge{c, s})
+					in = append(in, Edge{From: c, To: s, FromLine: m.callLineOf(c, m.Nodes[s].Name), ToSym: s, ToLine: m.Nodes[s].StartLine})
 				}
 			}
 		}

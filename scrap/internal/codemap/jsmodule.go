@@ -179,6 +179,53 @@ func (r *resolver) traceExport(id int32, name string) int32 {
 	return -1
 }
 
+// importedSymbol is the declaration an import names in the file it lands
+// in: `import {Hub} from "yougile-model"` points at Hub itself rather than
+// at the whole file. -1 when the language, the specifier or the name give
+// no single answer.
+func (r *resolver) importedSymbol(from, to int32, spec string) (node, line int32) {
+	js := r.js[from]
+	if js == nil {
+		return -1, -1
+	}
+	node, line = -1, -1
+	for _, name := range js.Uses[spec] {
+		if name == "*" || name == "default" {
+			continue
+		}
+		n, l := r.m.symbolIn(to, name)
+		if l < 0 {
+			continue
+		}
+		if line >= 0 {
+			return -1, -1 // several names: the file itself is the honest answer
+		}
+		node, line = n, l
+	}
+	return node, line
+}
+
+// symbolIn finds where name is declared inside a file node: its scope node
+// (-1 when the declaration has no box of its own) and its line (-1 = the
+// file does not declare it).
+func (m *Map) symbolIn(file int32, name string) (node, line int32) {
+	lower := strings.ToLower(name)
+	i, _ := slices.BinarySearchFunc(m.Symbols, lower, func(s Symbol, t string) int {
+		return strings.Compare(s.Lower, t)
+	})
+	for ; i < len(m.Symbols) && m.Symbols[i].Lower == lower; i++ {
+		s := &m.Symbols[i]
+		if s.Name != name || m.Files[s.File].Node != file {
+			continue
+		}
+		if m.Nodes[s.Node].Kind == KindScope {
+			return s.Node, s.Line
+		}
+		return -1, s.Line
+	}
+	return -1, -1
+}
+
 // jsTargets resolves what file node from imports from target node to: the
 // files declaring the names it uses when target re-exports them, else the
 // target itself.

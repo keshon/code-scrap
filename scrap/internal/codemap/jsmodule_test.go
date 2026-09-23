@@ -54,7 +54,7 @@ func TestBarrelDeps(t *testing.T) {
 	files := map[string]string{
 		"app.ts":             "import {Hub, Size, Btn, ns, Missing} from './model'\nimport * as m from './model'\nm.Chat()\n",
 		"model/index.ts":     "export * from './hub'\nexport * from './chat'\nexport {default as Btn, Size} from './ui/button'\nexport * as ns from './ns'\nexport * from './index'\n",
-		"model/hub.ts":       "export class Hub {}\n",
+		"model/hub.ts":       "export class Hub {\n  id = 1\n}\n",
 		"model/chat.ts":      "export function Chat() {}\n",
 		"model/ui/button.ts": "export default function Button() {}\nexport type Size = number\n",
 		"model/ns.ts":        "export const x = 1\n",
@@ -67,8 +67,8 @@ func TestBarrelDeps(t *testing.T) {
 		}
 	}
 	got := map[string]bool{}
-	for _, t := range m.Deps.Out[app] {
-		got[m.Path(t)] = true
+	for _, dep := range m.Deps.Out[app] {
+		got[m.Path(dep.Node)] = true
 	}
 	want := map[string]bool{"model/hub.ts": true, "model/chat.ts": true, "model/ui/button.ts": true, "model/ns.ts": true, "model/index.ts": true}
 	if !reflect.DeepEqual(got, want) {
@@ -76,6 +76,18 @@ func TestBarrelDeps(t *testing.T) {
 	}
 	if m.Deps.ViaBarrel != 4 {
 		t.Errorf("via barrel %d, want 4", m.Deps.ViaBarrel)
+	}
+	// relations aim at the import statement and at what it names
+	for _, dep := range m.Deps.Out[app] {
+		if m.Path(dep.Node) != "model/hub.ts" {
+			continue
+		}
+		if dep.Line != 0 {
+			t.Errorf("import of Hub is on line %d, want 0", dep.Line)
+		}
+		if dep.At != 0 || dep.Sym < 0 || m.Nodes[dep.Sym].Name != "Hub" {
+			t.Errorf("the import should point at class Hub on line 0, got sym %d line %d", dep.Sym, dep.At)
+		}
 	}
 }
 

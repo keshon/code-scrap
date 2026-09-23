@@ -620,6 +620,12 @@ func _refresh_relations() -> void:
 		_rel_reqs[client.request("calls", {"node": _selected_id})] = "calls"
 
 
+## An arc end for tooltips: the name, with the line it is anchored to.
+func _end_name(names: Dictionary, node: int, line: int) -> String:
+	var name := String(names.get(str(node), "?")).get_file()
+	return name if line < 0 else "%s:%d" % [name, line + 1]
+
+
 func _push_arcs() -> void:
 	var list := []
 	var direction: String = Settings.get_value("relations.direction")
@@ -631,8 +637,17 @@ func _push_arcs() -> void:
 			var key := "out" if dir == 0 else "in"
 			if direction != "both" and direction != key:
 				continue
+			var lines: Dictionary = r.get("lines", {})
+			var names: Dictionary = r.get("names", {})
 			for e in r[key].slice(0, most):
-				list.append({"a": nodes[str(int(e[0]))], "b": nodes[str(int(e[1]))], "color": Settings.get_value(REL_COLORS[op][dir])})
+				# aim at the import statement / the call and at the
+				# declaration it lands on, not at the middle of the box
+				var a: Array = lines.get("%d#%d" % [int(e[0]), int(e[2])], nodes[str(int(e[0]))])
+				var b: Array = lines.get("%d#%d" % [int(e[1]), int(e[3])], nodes[str(int(e[1]))])
+				list.append({"a": a, "b": b, "box_a": nodes[str(int(e[0]))], "box_b": nodes[str(int(e[1]))],
+					"an": _end_name(names, int(e[0]), int(e[2])), "bn": _end_name(names, int(e[1]), int(e[3])),
+					"kind": "imports" if op == "edges" else "calls",
+					"color": Settings.get_value(REL_COLORS[op][dir])})
 	map.set_arcs(list)
 	city.set_arcs(list)
 	var anchor := ""

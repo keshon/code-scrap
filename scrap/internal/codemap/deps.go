@@ -2,6 +2,7 @@ package codemap
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"os"
 	"path"
@@ -13,9 +14,19 @@ import (
 
 // Deps is the file dependency graph: who imports whom. Targets are file
 // nodes, or directory nodes for languages that import packages (Go).
+// Dep is one end of an import relation: the node at the other end, the
+// line of the import statement in the importing file, and — when the
+// imported name could be traced — the declaration it names.
+type Dep struct {
+	Node int32 // Out: what is imported · In: who imports
+	Line int32 // line of the import statement in the importing file
+	Sym  int32 // scope node declaring the imported name, -1 when it has no box
+	At   int32 // line of that declaration in the imported file, -1 unknown
+}
+
 type Deps struct {
-	Out   [][]int32 // by node id: nodes this file imports
-	In    [][]int32 // by node id: files importing this node
+	Out   [][]Dep // by node id: nodes this file imports
+	In    [][]Dep // by node id: files importing this node
 	Edges int
 
 	Specs      int            // import specifiers seen
@@ -40,40 +51,74 @@ var (
 	reCSS       = regexp.MustCompile(`@(?:import|use|forward)\s+(?:url\()?['"]([^'"]+)['"]`)
 )
 
-func extractImports(langName string, src []byte) []string {
-	var out []string
-	all := func(re *regexp.Regexp, b []byte) {
-		for _, m := range re.FindAllSubmatch(b, -1) {
-			out = append(out, string(m[1]))
+// Import is one import specifier and the 0-based line it is written on, so
+// a relation can point at the statement rather than at the whole file.
+type Import struct {
+	Spec string
+	Line int32
+}
+
+func extractImports(langName string, src []byte) []Import {
+	var out []Import
+	lines := lineIndex(src)
+	// off is where the match starts in src; for matches inside a block the
+	// caller passes the block's own offset
+	all := func(re *regexp.Regexp, b []byte, off int) {
+		for _, m := range re.FindAllSubmatchIndex(b, -1) {
+			if m[2] < 0 {
+				continue
+			}
+			out = append(out, Import{string(b[m[2]:m[3]]), lineAt(lines, off+m[2])})
 		}
 	}
 	switch langName {
 	case "JavaScript/TypeScript":
-		all(reJSFrom, src)
-		all(reJSSide, src)
-		all(reJSCall, src)
+		all(reJSFrom, src, 0)
+		all(reJSSide, src, 0)
+		all(reJSCall, src, 0)
 	case "Go":
-		for _, blk := range reGoBlock.FindAllSubmatch(src, -1) {
-			all(reQuoted, blk[1])
+		for _, blk := range reGoBlock.FindAllSubmatchIndex(src, -1) {
+			all(reQuoted, src[blk[2]:blk[3]], blk[2])
 		}
-		all(reGoOne, src)
+		all(reGoOne, src, 0)
 	case "Python":
-		all(rePyFrom, src)
-		for _, m := range rePyImport.FindAllSubmatch(src, -1) {
-			for _, p := range strings.Split(string(m[1]), ",") {
-				out = append(out, strings.TrimSpace(p))
+		all(rePyFrom, src, 0)
+		for _, m := range rePyImport.FindAllSubmatchIndex(src, -1) {
+			line := lineAt(lines, m[2])
+			for _, p := range strings.Split(string(src[m[2]:m[3]]), ",") {
+				out = append(out, Import{strings.TrimSpace(p), line})
 			}
 		}
 	case "C/C++":
-		all(reCInclude, src)
+		all(reCInclude, src, 0)
 	case "GDScript":
-		all(reGDLoad, src)
-		all(reGDExtends, src)
+		all(reGDLoad, src, 0)
+		all(reGDExtends, src, 0)
 	case "CSS":
-		all(reCSS, src)
+		all(reCSS, src, 0)
 	}
-	slices.Sort(out)
-	return slices.Compact(out)
+	slices.SortFunc(out, func(a, b Import) int { return cmp.Or(cmp.Compare(a.Spec, b.Spec), cmp.Compare(a.Line, b.Line)) })
+	return slices.CompactFunc(out, func(a, b Import) bool { return a.Spec == b.Spec })
+}
+
+// lineIndex lists the offset just past each newline, so a byte offset can
+// be turned into a line number by binary search.
+func lineIndex(src []byte) []int {
+	out := []int{0}
+	for i, c := range src {
+		if c == '\n' {
+			out = append(out, i+1)
+		}
+	}
+	return out
+}
+
+func lineAt(index []int, off int) int32 {
+	i, ok := slices.BinarySearch(index, off)
+	if ok {
+		return int32(i)
+	}
+	return int32(max(i-1, 0))
 }
 
 // resolver maps import specifiers to map nodes.
@@ -101,7 +146,7 @@ type goMod struct {
 
 var jsExts = []string{".ts", ".tsx", ".d.ts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".json", ".scss", ".css"}
 
-func (m *Map) buildDeps(imports map[int32][]string, js map[int32]*jsModule) {
+func (m *Map) buildDeps(imports map[int32][]Import, js map[int32]*jsModule) {
 	r := &resolver{m: m, files: map[string]int32{}, dirs: map[string]int32{}, js: js, jsMemo: map[jsKey]int32{}}
 	for i := range m.Files {
 		f := &m.Files[i]
@@ -126,11 +171,12 @@ func (m *Map) buildDeps(imports map[int32][]string, js map[int32]*jsModule) {
 	}
 	r.readTSConfig()
 
-	d := Deps{Out: make([][]int32, len(m.Nodes)), In: make([][]int32, len(m.Nodes)), Unresolved: map[string]int{}}
+	d := Deps{Out: make([][]Dep, len(m.Nodes)), In: make([][]Dep, len(m.Nodes)), Unresolved: map[string]int{}}
 	for from, specs := range imports {
 		f := &m.Files[m.Nodes[from].File]
 		seen := map[int32]bool{}
-		for _, spec := range specs {
+		for _, imp := range specs {
+			spec := imp.Spec
 			d.Specs++
 			to := r.resolve(f, spec)
 			if to < 0 {
@@ -148,8 +194,9 @@ func (m *Map) buildDeps(imports map[int32][]string, js map[int32]*jsModule) {
 					continue
 				}
 				seen[t] = true
-				d.Out[from] = append(d.Out[from], t)
-				d.In[t] = append(d.In[t], from)
+				sym, at := r.importedSymbol(from, t, spec)
+				d.Out[from] = append(d.Out[from], Dep{Node: t, Line: imp.Line, Sym: sym, At: at})
+				d.In[t] = append(d.In[t], Dep{Node: from, Line: imp.Line, Sym: sym, At: at})
 				d.Edges++
 				if t != to {
 					d.ViaBarrel++
@@ -414,7 +461,15 @@ func jsonc(b []byte) []byte {
 }
 
 // Edge is one dependency: From imports To.
-type Edge struct{ From, To int32 }
+// Edge is one relation between two boxes, with where to aim it: the line
+// in the From file it comes from (-1 unknown) and the declaration it lands
+// on at the To end (-1 unknown, aim at the whole box).
+type Edge struct {
+	From, To int32
+	FromLine int32 // where it starts in the From file (-1 = the whole box)
+	ToSym    int32 // the declaration it lands on, when that has a box of its own
+	ToLine   int32 // …else its line in the To file (-1 = the whole box)
+}
 
 // DepsOf returns the edges crossing the boundary of a node's subtree:
 // out = files inside importing nodes outside; in = files outside importing
@@ -426,19 +481,19 @@ func (m *Map) DepsOf(id int32, limit int) (out, in []Edge, outTotal, inTotal int
 	lo, hi := id, m.Nodes[id].End
 	inside := func(n int32) bool { return n >= lo && n < hi }
 	for n := lo; n < hi; n++ {
-		for _, t := range m.Deps.Out[n] {
-			if !inside(t) {
+		for _, dep := range m.Deps.Out[n] {
+			if !inside(dep.Node) {
 				outTotal++
 				if len(out) < limit {
-					out = append(out, Edge{n, t})
+					out = append(out, Edge{From: n, To: dep.Node, FromLine: dep.Line, ToSym: dep.Sym, ToLine: dep.At})
 				}
 			}
 		}
-		for _, f := range m.Deps.In[n] {
-			if !inside(f) {
+		for _, dep := range m.Deps.In[n] {
+			if !inside(dep.Node) {
 				inTotal++
 				if len(in) < limit {
-					in = append(in, Edge{f, n})
+					in = append(in, Edge{From: dep.Node, To: n, FromLine: dep.Line, ToSym: dep.Sym, ToLine: dep.At})
 				}
 			}
 		}

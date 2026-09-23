@@ -3,6 +3,7 @@ package server
 import (
 	"cmp"
 	"encoding/binary"
+	"fmt"
 	"maps"
 	"math"
 	"slices"
@@ -17,7 +18,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 9
+const Protocol = 10
 
 func hello(st *state) map[string]any {
 	m := st.m
@@ -302,26 +303,51 @@ func relations(st *state, op string, id int32) map[string]any {
 	}
 	nodes := map[string][5]float64{}
 	names := map[string]string{}
-	pair := func(es []codemap.Edge) [][2]int32 {
-		res := make([][2]int32, len(es))
+	lines := map[string][5]float64{}
+	box := func(n int32) {
+		if n < 0 {
+			return
+		}
+		r := m.Nodes[n].Rect
+		k := strconv.Itoa(int(n))
+		nodes[k] = [5]float64{r.X, r.Y, r.W, r.H, m.Nodes[n].Top}
+		names[k] = m.Path(n)
+		if m.Nodes[n].Kind == codemap.KindScope {
+			names[k] = m.Nodes[n].Name + " · " + m.Files[m.Nodes[n].File].Path
+		}
+	}
+	// the exact place inside a box an arc starts from or lands on: the
+	// import statement, the call, the declaration
+	line := func(n, ln int32) {
+		if n < 0 || ln < 0 || m.Nodes[n].Kind == codemap.KindDir {
+			return
+		}
+		f := &m.Files[m.Nodes[n].File]
+		if ln >= f.Lines {
+			return
+		}
+		r := f.LineRect(ln)
+		lines[fmt.Sprintf("%d#%d", n, ln)] = [5]float64{r.X, r.Y, r.W, r.H, m.Nodes[n].Top}
+	}
+	pair := func(es []codemap.Edge) [][4]int32 {
+		res := make([][4]int32, len(es))
 		for i, e := range es {
-			res[i] = [2]int32{e.From, e.To}
-			for _, n := range [2]int32{e.From, e.To} {
-				r := m.Nodes[n].Rect
-				k := strconv.Itoa(int(n))
-				nodes[k] = [5]float64{r.X, r.Y, r.W, r.H, m.Nodes[n].Top}
-				names[k] = m.Path(n)
-				if m.Nodes[n].Kind == codemap.KindScope {
-					names[k] = m.Nodes[n].Name + " · " + m.Files[m.Nodes[n].File].Path
-				}
+			res[i] = [4]int32{e.From, e.To, e.FromLine, e.ToLine}
+			if e.ToSym >= 0 {
+				res[i][1] = e.ToSym // a declaration with a box of its own
+				res[i][3] = -1
 			}
+			box(e.From)
+			box(res[i][1])
+			line(e.From, e.FromLine)
+			line(res[i][1], res[i][3])
 		}
 		return res
 	}
 	return map[string]any{
 		"op": op, "node": id,
 		"out": pair(out), "in": pair(in), "outTotal": outTotal, "inTotal": inTotal,
-		"nodes": nodes, "names": names,
+		"nodes": nodes, "names": names, "lines": lines,
 	}
 }
 

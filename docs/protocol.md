@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **9** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **10** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 10 | Relation edges are `[from, to, fromLine, toLine]` instead of `[from, to]`: where the relation starts in the From file (the import statement, the call) and where it lands in the To file. `to` is the imported or called declaration itself when that has a box of its own. Replies carry `lines`, the rect of every anchored line. |
 | 9 | `node`/`pick` carry `base`, the height a box stands on (3D highlights span base..top). In 3D tiles, file labels carry the whole box rect too (folder labels already did), so viewers can place a name on the roof's header strip or its middle. |
 | 8 | `options.look.headers` (folder header bands). 2D tiles may carry kind-4 instances: a folder's header band, drawn after the folder and before its children; with headers on, folder labels span that band. |
 | 7 | `options.look = {order, algorithm, palette, lineNumbers}` replaces `stable`/`palette`. Text blocks start with a gutter (line numbers or padding): `hello.text.colChars` includes it, and text keys change with it. |
@@ -58,7 +59,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 9, "gen": 3,
+  "op": "hello", "protocol": 10, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,
@@ -107,7 +108,7 @@ The node's id, `parent`, `name`, `kind` (`dir` | `file` | `scope`), `path`, `lin
 
 ### Relations (`edges`, `calls`)
 
-`node`, `out: [[from, to], …]`, `in: [[from, to], …]`, `outTotal`, `inTotal` `nodes: {"id": [x, y, w, h, top]}` and `names: {"id": "path" or "name · path"}`. `nodes` gives the geometry of every endpoint, so arcs draw without further requests. Each list is capped at 2000 edges.
+`node`, `out: [[from, to, fromLine, toLine], …]`, `in: [[…], …]`, `outTotal`, `inTotal`, `nodes: {"id": [x, y, w, h, top]}`, `names: {"id": "path" or "name · path"}` and `lines: {"<node>#<line>": [x, y, w, h, top]}`. `nodes` gives the geometry of every endpoint and `lines` the rect of every anchored line, so arcs draw without further requests: a relation starts at `fromLine` in the From file (the import statement, the call) and lands on `toLine` in the To file, or on `to` itself when the declaration it names has a box of its own (then `toLine` is −1). A line is −1 when it could not be traced; aim at the whole box then. Each list is capped at 2000 edges.
 
 ## Binary frames
 

@@ -64,6 +64,7 @@ type Node struct {
 	Params             int32
 	MaxNesting         int32
 	Calls              []string // distinct names called inside (syntax-level)
+	CallAt             []int32  // the first line each of them is called on
 }
 
 // ColChars is the width of one text column inside a file box, in characters.
