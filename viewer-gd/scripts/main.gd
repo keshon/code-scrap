@@ -637,6 +637,8 @@ func _push_arcs() -> void:
 			var key := "out" if dir == 0 else "in"
 			if direction != "both" and direction != key:
 				continue
+			var by_dir: bool = Settings.get_value("relations.style") == "direction"
+			var col: Color = Settings.get_value("relations.dir_out" if dir == 0 else "relations.dir_in") 				if by_dir else Settings.get_value(REL_COLORS[op][dir])
 			var lines: Dictionary = r.get("lines", {})
 			var names: Dictionary = r.get("names", {})
 			for e in r[key].slice(0, most):
@@ -647,7 +649,8 @@ func _push_arcs() -> void:
 				list.append({"a": a, "b": b, "box_a": nodes[str(int(e[0]))], "box_b": nodes[str(int(e[1]))],
 					"an": _end_name(names, int(e[0]), int(e[2])), "bn": _end_name(names, int(e[1]), int(e[3])),
 					"kind": "imports" if op == "edges" else "calls",
-					"color": Settings.get_value(REL_COLORS[op][dir])})
+					# in direction mode the kind is the line's style, not its colour
+					"dashed": by_dir and op == "edges", "color": col})
 	map.set_arcs(list)
 	city.set_arcs(list)
 	var anchor := ""

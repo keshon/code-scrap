@@ -88,18 +88,22 @@ func _rebuild() -> void:
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		d.custom_minimum_size = Vector2(200, 0)
 		_box.add_child(d)
-	var arcs: bool = Settings.get_value("viewport.arcs")
-	if arcs and (_rel.get("imports", false) or _rel.get("calls", false)):
+	if _rel.get("imports", false) or _rel.get("calls", false):
 		_box.add_child(HSeparator.new())
 		_box.add_child(_title("Relations"))
 		# said as sentences: the arrow always points at what is used, so the
 		# colour only says which side of it the selection is on
-		if _rel.get("imports", false):
-			_box.add_child(_swatch(Settings.get_value("relations.imports_out"), "this imports →", true))
-			_box.add_child(_swatch(Settings.get_value("relations.imports_in"), "→ imports this", true))
-		if _rel.get("calls", false):
-			_box.add_child(_swatch(Settings.get_value("relations.calls_out"), "this calls →", true))
-			_box.add_child(_swatch(Settings.get_value("relations.calls_in"), "→ calls this", true))
+		if Settings.get_value("relations.style") == "direction":
+			_box.add_child(_swatch(Settings.get_value("relations.dir_out"), "this uses →", true))
+			_box.add_child(_swatch(Settings.get_value("relations.dir_in"), "→ uses this", true))
+			_box.add_child(_small("dashed = imports · solid = calls"))
+		else:
+			if _rel.get("imports", false):
+				_box.add_child(_swatch(Settings.get_value("relations.imports_out"), "this imports →", true))
+				_box.add_child(_swatch(Settings.get_value("relations.imports_in"), "→ imports this", true))
+			if _rel.get("calls", false):
+				_box.add_child(_swatch(Settings.get_value("relations.calls_out"), "this calls →", true))
+				_box.add_child(_swatch(Settings.get_value("relations.calls_in"), "→ calls this", true))
 		_box.add_child(_small("arrows point at what is used"))
 		_box.add_child(_small("click an arc to follow it, again to come back"))
 	_box.add_child(HSeparator.new())

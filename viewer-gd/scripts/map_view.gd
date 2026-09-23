@@ -695,9 +695,8 @@ func _draw_overlay() -> void:
 		o.draw_rect(s.grow(1), HIT_COLOR, false, 1.5)
 	_update_dim()
 	_arc_lines = []
-	if Settings.get_value("viewport.arcs"):
-		_draw_arcs()
-		_draw_arc_tip()
+	_draw_arcs()
+	_draw_arc_tip()
 	var headers: bool = Settings.get_value("look.headers")
 	var show_hover: bool = hover.has("rect") and int(hover.get("node", -1)) >= 0 and Settings.get_value("viewport.hover") 		and Settings.get_value("highlight.hover_style") != "off"
 	if headers:
@@ -852,11 +851,12 @@ func _draw_arcs() -> void:
 			for e in [ea, eb]:
 				if e.precise:
 					marks[[e.rect.position.x, e.rect.position.y, arc.color]] = {"r": e.rect, "c": arc.color}
-		var key := [ea.key, eb.key, arc.color]
+		var key := [ea.key, eb.key, arc.color, arc.get("dashed", false)]
 		if bundles.has(key):
 			bundles[key].n += 1
 		else:
 			bundles[key] = {"a": a, "b": b, "c": arc.color, "n": 1, "kind": arc.get("kind", ""),
+				"dashed": arc.get("dashed", false),
 				"aw": arc.a, "bw": arc.b,
 				# a sentence, so no one has to remember which way the arrow points
 				"text": "%s %s %s" % [arc.get("an", "?"), arc.get("kind", "uses"), arc.get("bn", "?")]}
@@ -886,8 +886,8 @@ func _draw_arcs() -> void:
 		_arc_lines.append({"pts": pts, "aw": bd.aw, "bw": bd.bw, "key": "%s|%s" % [bd.aw, bd.bw],
 			"text": bd.text if bd.n == 1 else "%d %s arcs · %s" % [bd.n, bd.kind, bd.text]})
 		if hovered:
-			o.draw_polyline(pts, Color(c, 1.0), w + 2.0, true)
-		o.draw_polyline(pts, ca, w, true)
+			_stroke(pts, Color(c, 1.0), w + 2.0, bd.dashed)
+		_stroke(pts, ca, w, bd.dashed)
 		if arrows:
 			# arrowhead at the imported/called end
 			var tip := pts[20]
@@ -969,6 +969,29 @@ func follow_arc(i: int) -> void:
 		fly_to(t[0], t[1], t[2])
 
 
+## One arc's line: solid, or dashed when the kind is drawn as a style
+## rather than a colour.
+func _stroke(pts: PackedVector2Array, c: Color, w: float, dashed: bool) -> void:
+	if not dashed:
+		_overlay.draw_polyline(pts, c, w, true)
+		return
+	var on := 8.0
+	var off := 6.0
+	var walked := 0.0
+	for i in range(1, pts.size()):
+		var a := pts[i - 1]
+		var b := pts[i]
+		var seg := a.distance_to(b)
+		var at := 0.0
+		while at < seg:
+			var phase := fmod(walked + at, on + off)
+			var run: float = minf(seg - at, (on - phase) if phase < on else (on + off - phase))
+			if phase < on:
+				_overlay.draw_line(a.lerp(b, at / seg), a.lerp(b, minf(at + run, seg) / seg), c, w, true)
+			at += maxf(run, 0.5)
+		walked += seg
+
+
 ## The arc nearest to the cursor, within a few pixels (-1 = none).
 func _pick_arc(p: Vector2) -> int:
 	var best := -1
@@ -988,7 +1011,7 @@ func _pick_arc(p: Vector2) -> int:
 func _update_dim() -> void:
 	var amount: float = Settings.get_value("look.focus_dim")
 	var active: bool = amount > 0.0 and ((not hit_files.is_empty() and Settings.get_value("viewport.search_hits")) \
-		or (not arcs.is_empty() and Settings.get_value("viewport.arcs")))
+		or not arcs.is_empty())
 	_dim.visible = active
 	_mask_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
 	if not active:
@@ -1010,7 +1033,7 @@ func _draw_mask() -> void:
 	if Settings.get_value("viewport.search_hits"):
 		for r in hit_files:
 			keep.call(r)
-	if Settings.get_value("viewport.arcs"):
+	if not arcs.is_empty():
 		for arc in arcs:
 			keep.call(arc.a)
 			keep.call(arc.b)

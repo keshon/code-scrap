@@ -104,14 +104,6 @@
           "desc": "Tint files and lines that match the current search."
         },
         {
-          "id": "viewport.arcs",
-          "surface": "display",
-          "type": "bool",
-          "default": true,
-          "label": "Relation arcs",
-          "desc": "Draw import and call arcs when those overlays are on."
-        },
-        {
           "id": "viewport.legend",
           "surface": "display",
           "type": "bool",
@@ -734,6 +726,32 @@
           "default": false,
           "label": "Show calls",
           "desc": "Arcs to what the selected function or file calls and from its callers. Syntax-level: ambiguous names are skipped."
+        },
+        {
+          "id": "relations.style",
+          "surface": "view",
+          "type": "enum",
+          "options": [
+            "direction",
+            "kind"
+          ],
+          "default": "direction",
+          "label": "Arc colors",
+          "desc": "direction: two colors — what the selection uses and what uses it — with imports dashed and calls solid · kind: a color per kind and direction (four in all)."
+        },
+        {
+          "id": "relations.dir_out",
+          "type": "color",
+          "default": "#ff9e40",
+          "label": "Outgoing (direction mode)",
+          "desc": "What the selection uses: it imports or calls that."
+        },
+        {
+          "id": "relations.dir_in",
+          "type": "color",
+          "default": "#4fc3f7",
+          "label": "Incoming (direction mode)",
+          "desc": "What uses the selection: that imports or calls it."
         },
         {
           "id": "relations.imports_out",

@@ -273,7 +273,7 @@ func set_arcs(list: Array) -> void:
 
 ## Arcs are rebuilt when they change or the floating origin moves.
 func _update_arcs() -> void:
-	_arcs_mesh.visible = Settings.get_value("viewport.arcs")
+	_arcs_mesh.visible = not arcs.is_empty()
 	if _arcs_origin == _origin:
 		return
 	_arcs_origin = _origin.duplicate()
@@ -294,10 +294,14 @@ func _update_arcs() -> void:
 		var span := a.distance_to(b)
 		var ctrl: Vector3 = (a + b) * 0.5 + Vector3.UP * (max(a.y, b.y) - (a.y + b.y) * 0.5 + span * rise)
 		var c: Color = arc.color
+		var dashed: bool = arc.get("dashed", false)
 		var prev := a
 		for i in range(1, 25):
 			var t := i / 24.0
 			var p := a.lerp(ctrl, t).lerp(ctrl.lerp(b, t), t)
+			if dashed and i % 2 == 0:   # the kind as a line style, as in 2D
+				prev = p
+				continue
 			# fade toward the target end so direction reads without arrowheads
 			im.surface_set_color(Color(c, alpha * (1.0 - 0.6 * (t - 1.0 / 24.0))))
 			im.surface_add_vertex(prev)
