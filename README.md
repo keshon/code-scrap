@@ -109,8 +109,8 @@ Every lens is optional; the defaults show the plain map.
 | **height** | 3D building height: *Nesting* (terraces), *Flat*, or a metric: lines, complexity, functions, churn, recent change, authors |
 | **color** | *Area* hue, *Cluster* (files grouped by imports, calls and git co-change rather than folders; hubs most of the code imports shown apart), or the same metrics as a blue → red percentile ramp |
 | **importance** | shrink vendored, test, generated, asset and data files so the core code gets the space |
-| **imports** | arcs from the selection to what it imports (orange) and from what imports it (blue) |
-| **calls** | arcs to what the selected function/file calls (violet) and from its callers (green); syntax-level, ambiguous names skipped |
+| **imports** | arcs from the selection to what it imports (orange) and from what imports it (blue); an arc leaves the import statement and lands on the declaration it names (JS/TS, through barrels), and both lines light up while they are readable on screen |
+| **calls** | arcs to what the selected function/file calls (violet) and from its callers (green); an arc leaves the call and lands on the callee's first line; syntax-level, ambiguous names skipped |
 
 Git lenses read `git log` for the last 12 months in the background (**Settings → History**, or `scrap serve -git-since`, changes the window). Importance weights per file class are in **Settings → Importance weights**.
 

@@ -335,7 +335,6 @@ func relations(st *state, op string, id int32) map[string]any {
 			res[i] = [4]int32{e.From, e.To, e.FromLine, e.ToLine}
 			if e.ToSym >= 0 {
 				res[i][1] = e.ToSym // a declaration with a box of its own
-				res[i][3] = -1
 			}
 			box(e.From)
 			box(res[i][1])

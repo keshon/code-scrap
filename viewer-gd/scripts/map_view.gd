@@ -68,6 +68,10 @@ var selection_header := []         # the selected folder's header band (folder h
 var selection_id := -1
 
 # search overlays
+## A line thinner than this on screen cannot be told from its neighbours,
+## so an arc aims at the whole box instead.
+const LINE_ANCHOR_PX := 2.5
+
 var hit_files := []                # Array of world rects [x,y,w,h]
 var hit_lines := []                # Array of world rects
 var current_hit := []              # world rect of the focused hit
@@ -815,9 +819,11 @@ func set_arcs(list: Array) -> void:
 	_overlay.queue_redraw()
 
 
-## Arcs as quadratic curves. Endpoints smaller on screen than
-## relations.group_px snap to a grid, so arcs between the same small
-## neighbourhoods merge into one thicker arc instead of a blended tangle.
+## Arcs as quadratic curves. Each end aims at the line it means — the
+## import statement, the call, the declaration — while that line is still
+## readable on screen; below that it aims at the whole box, and boxes
+## smaller than relations.group_px snap to a grid, so arcs between the same
+## small neighbourhoods merge into one thicker arc instead of a tangle.
 func _draw_arcs() -> void:
 	if arcs.is_empty():
 		return
@@ -828,22 +834,31 @@ func _draw_arcs() -> void:
 	var group: float = Settings.get_value("relations.group_px")
 	var bend: float = Settings.get_value("relations.arc_height") * 0.5
 	var arrows: bool = Settings.get_value("relations.arrows")
+	var mark: bool = Settings.get_value("relations.line_marks")
 	var bundles := {}
+	var marks := {}
 	for arc in arcs:
-		var ra := rect_to_screen(arc.a)
-		var rb := rect_to_screen(arc.b)
-		var a := ra.get_center()
-		var b := rb.get_center()
+		var ea := _arc_end(arc.a, arc.get("box_a", arc.a), group)
+		var eb := _arc_end(arc.b, arc.get("box_b", arc.b), group)
+		var a: Vector2 = ea.point
+		var b: Vector2 = eb.point
 		if not view.has_point(a) and not view.has_point(b):
 			continue
-		var ka: Variant = _group_key(a, ra, group)
-		var kb: Variant = _group_key(b, rb, group)
-		var key := [ka, kb, arc.color]
+		if mark:
+			for e in [ea, eb]:
+				if e.precise:
+					marks[[e.rect.position.x, e.rect.position.y, arc.color]] = {"r": e.rect, "c": arc.color}
+		var key := [ea.key, eb.key, arc.color]
 		if bundles.has(key):
 			bundles[key].n += 1
 		else:
-			bundles[key] = {"a": ka if ka is Vector2 else a, "b": kb if kb is Vector2 else b, "c": arc.color, "n": 1,
+			bundles[key] = {"a": a, "b": b, "c": arc.color, "n": 1,
 				"kind": arc.get("kind", ""), "text": "%s → %s · %s" % [arc.get("an", "?"), arc.get("bn", "?"), arc.get("kind", "")]}
+	# the lines an arc starts from and lands on, under the curves
+	for m in marks.values():
+		var r: Rect2 = m.r
+		o.draw_rect(r, Color(m.c, 0.16))
+		o.draw_rect(Rect2(r.position, Vector2(2.0, r.size.y)), Color(m.c, 0.75))
 	var alpha: float = clamp(60.0 / max(bundles.size(), 1), top_a * 0.2, top_a)
 	for bd in bundles.values():
 		var a: Vector2 = bd.a
@@ -976,6 +991,19 @@ func _draw_mask() -> void:
 
 ## An endpoint's bundling key: its snapped cell centre when the box is
 ## small on screen, else null (drawn on its own).
+## One end of an arc: the exact line while it is readable, else the box,
+## else a grid cell shared with its small neighbours.
+func _arc_end(line: Array, box: Array, group: float) -> Dictionary:
+	var lr := rect_to_screen(line)
+	if line != box and lr.size.y >= LINE_ANCHOR_PX and lr.size.x >= 6.0:
+		return {"point": Vector2(lr.position.x + minf(lr.size.x, 14.0), lr.get_center().y),
+			"rect": lr, "precise": true, "key": [lr.position.x, lr.position.y]}
+	var br := rect_to_screen(box)
+	var c := br.get_center()
+	var k: Variant = _group_key(c, br, group)
+	return {"point": k if k is Vector2 else c, "rect": br, "precise": false, "key": k if k is Vector2 else c}
+
+
 func _group_key(p: Vector2, r: Rect2, group: float) -> Variant:
 	if group <= 0.0 or max(r.size.x, r.size.y) >= group:
 		return null

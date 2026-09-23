@@ -823,6 +823,13 @@
           "desc": "Mark the target end of each arc (2D)."
         },
         {
+          "id": "relations.line_marks",
+          "type": "bool",
+          "default": true,
+          "label": "Mark the lines",
+          "desc": "2D: highlight the line each arc starts from and lands on (the import statement, the call, the declaration) while it is readable on screen."
+        },
+        {
           "id": "relations.group_px",
           "type": "float",
           "default": 18.0,
