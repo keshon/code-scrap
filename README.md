@@ -112,6 +112,8 @@ Every lens is optional; the defaults show the plain map.
 | **imports** | arcs from the selection to what it imports (orange) and from what imports it (blue); an arc leaves the import statement and lands on the declaration it names (JS/TS, through barrels), and both lines light up while they are readable on screen |
 | **calls** | arcs to what the selected function/file calls (violet) and from its callers (green); an arc leaves the call and lands on the callee's first line; syntax-level, ambiguous names skipped |
 
+Every arrowhead points at what is used, so the color only says which side of the relation the selection is on. Hovering an arc reads it out as a sentence ("build.go:312 imports Hub · hub.ts:14"); clicking one travels to its far end, and clicking it again comes back.
+
 Git lenses read `git log` for the last 12 months in the background (**Settings → History**, or `scrap serve -git-since`, changes the window). Importance weights per file class are in **Settings → Importance weights**.
 
 ### CLI

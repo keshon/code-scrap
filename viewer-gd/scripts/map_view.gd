@@ -39,8 +39,9 @@ var _grid: ColorRect
 var _dim: ColorRect          # focus + context: darkens all but the mask
 var _mask_vp: SubViewport
 var _mask: Control
-var _arc_lines := []         # drawn arcs this frame: {pts, text}
+var _arc_lines := []         # drawn arcs this frame: {pts, text, aw, bw, key}
 var _arc_hover := -1
+var _arc_back := {}          # where the view was before following an arc
 var _level := -1
 
 # diagnostics (HUD)
@@ -593,6 +594,9 @@ func _on_reply(_id: int, data: Dictionary) -> void:
 ## A click selects what is under the cursor; a click on empty space
 ## deselects.
 func _click_select() -> void:
+	if _arc_hover >= 0 and _arc_hover < _arc_lines.size():
+		follow_arc(_arc_hover)   # a click on an arc travels along it
+		return
 	if hover.is_empty() or int(hover.get("node", -1)) < 0:
 		deselect()
 		return
@@ -852,8 +856,10 @@ func _draw_arcs() -> void:
 		if bundles.has(key):
 			bundles[key].n += 1
 		else:
-			bundles[key] = {"a": a, "b": b, "c": arc.color, "n": 1,
-				"kind": arc.get("kind", ""), "text": "%s → %s · %s" % [arc.get("an", "?"), arc.get("bn", "?"), arc.get("kind", "")]}
+			bundles[key] = {"a": a, "b": b, "c": arc.color, "n": 1, "kind": arc.get("kind", ""),
+				"aw": arc.a, "bw": arc.b,
+				# a sentence, so no one has to remember which way the arrow points
+				"text": "%s %s %s" % [arc.get("an", "?"), arc.get("kind", "uses"), arc.get("bn", "?")]}
 	# the lines an arc starts from and lands on, under the curves
 	for m in marks.values():
 		var r: Rect2 = m.r
@@ -877,7 +883,8 @@ func _draw_arcs() -> void:
 		var w: float = width * (1.0 + log(float(bd.n)) / log(2.0) * 0.6)
 		var ca := Color(c, min(alpha * (1.0 + 0.15 * (bd.n - 1)), top_a))
 		var hovered := _arc_lines.size() == _arc_hover
-		_arc_lines.append({"pts": pts, "text": bd.text if bd.n == 1 else "%d %s arcs · %s" % [bd.n, bd.kind, bd.text]})
+		_arc_lines.append({"pts": pts, "aw": bd.aw, "bw": bd.bw, "key": "%s|%s" % [bd.aw, bd.bw],
+			"text": bd.text if bd.n == 1 else "%d %s arcs · %s" % [bd.n, bd.kind, bd.text]})
 		if hovered:
 			o.draw_polyline(pts, Color(c, 1.0), w + 2.0, true)
 		o.draw_polyline(pts, ca, w, true)
@@ -929,7 +936,7 @@ func _draw_hover_tip() -> void:
 func _draw_arc_tip() -> void:
 	if _arc_hover < 0 or _arc_hover >= _arc_lines.size():
 		return
-	var text: String = _arc_lines[_arc_hover].text
+	var text: String = _arc_lines[_arc_hover].text + "   ·   click to follow"
 	var fs: int = Settings.get_value("labels.font_size")
 	var font := Style.font("ui", 500)
 	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
@@ -938,6 +945,28 @@ func _draw_arc_tip() -> void:
 		r.position.x = _last_mouse.x - r.size.x - 8
 	_overlay.draw_rect(r, Color(Style.color("raised"), 0.96))
 	_overlay.draw_string(font, r.position + Vector2(7, fs + 2), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Style.color("text"))
+
+
+## Follows an arc to its far end; clicking the same arc again comes back.
+## The view travels, the selection stays: an arc is a route, not a choice.
+func follow_arc(i: int) -> void:
+	var arc: Dictionary = _arc_lines[i]
+	if _arc_back.get("key", "") == arc.key:
+		var back: Dictionary = _arc_back
+		_arc_back = {}
+		fly_to(back.cx, back.cy, back.zoom)
+		return
+	var here := Vector2(size.x * 0.5, size.y * 0.5)
+	var a: Rect2 = rect_to_screen(arc.aw)
+	var b: Rect2 = rect_to_screen(arc.bw)
+	var far: Array = arc.bw if a.get_center().distance_to(here) < b.get_center().distance_to(here) else arc.aw
+	_arc_back = {"key": arc.key, "cx": cx, "cy": cy, "zoom": zoom}
+	# a line-sized end deserves reading distance, a box just fits the view
+	if far[3] * zoom < 6.0 and far[3] > 0.0:
+		focus_line(far)
+	else:
+		var t := fit_rect(far)
+		fly_to(t[0], t[1], t[2])
 
 
 ## The arc nearest to the cursor, within a few pixels (-1 = none).

@@ -21,6 +21,8 @@ extends Node
 ##   --hover=fx,fy     2D: point the cursor at this fraction of the map view
 ##                     (after --wait/2) and pick what is under it
 ##   --later=id:value  change a setting after --wait/2 (rebuilds the layout)
+##   --arc=<i>         follow the i-th drawn arc after --wait/2 (and again at
+##                     --wait*0.8 with --arcback=1, which should come back)
 
 var shell: Node   # main.gd
 var args := {}
@@ -69,6 +71,19 @@ func _ready() -> void:
 			shell._node_req = client.request("node", {"path": args.select}), CONNECT_ONE_SHOT)
 	if args.get("view", "") == "3d":
 		client.hello.connect(func(_i): _enter_3d(), CONNECT_ONE_SHOT)
+	if args.has("arc"):
+		var wait := float(args.get("wait", 4))
+		get_tree().create_timer(wait * 0.5).timeout.connect(func():
+			var m = shell.map
+			print("arc follow: camera ", m.cx, " ", m.cy, " zoom ", m.zoom, " arcs ", m._arc_lines.size())
+			if int(args.arc) < m._arc_lines.size():
+				m.follow_arc(int(args.arc)))
+		if args.has("arcback"):
+			get_tree().create_timer(wait * 0.8).timeout.connect(func():
+				var m = shell.map
+				print("arc back:   camera ", m.cx, " ", m.cy, " zoom ", m.zoom)
+				if int(args.arc) < m._arc_lines.size():
+					m.follow_arc(int(args.arc)))
 	if args.has("later"):
 		var kv := String(args.later)
 		var sid := kv.get_slice(":", 0)
