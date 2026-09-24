@@ -46,6 +46,11 @@ func (m *Map) Header(id int32) Rect {
 		return Rect{}
 	}
 	s := n.Rect.Min()
+	if n.Kind == KindDir && m.View.Headers {
+		// the band is the folder's own top edge, not a label floating
+		// inside it: no gap between the band and the contour
+		return rect(n.Rect.X, n.Rect.Y, n.Rect.W, s*m.headerFrac(n.Kind, s))
+	}
 	p := s * padFrac
 	return rect(n.Rect.X+p, n.Rect.Y+p, n.Rect.W-2*p, s*m.headerFrac(n.Kind, s))
 }
@@ -70,6 +75,9 @@ func (m *Map) content(r Rect, k Kind) Rect {
 	s := r.Min()
 	p := s * padFrac
 	h := s * m.headerFrac(k, s)
+	if k == KindDir && m.View.Headers {
+		return rect(r.X+p, r.Y+h+p, r.W-2*p, max(r.H-h-2*p, 0)) // the band starts at the very top
+	}
 	return rect(r.X+p, r.Y+p+h, r.W-2*p, max(r.H-2*p-h, 0))
 }
 
@@ -203,7 +211,9 @@ func (m *Map) layoutNode(id int32) {
 		for i, c := range n.Children {
 			cn := &m.Nodes[c]
 			cn.Rect = rects[i]
-			cn.InHeader = m.View.Headers && cn.Kind == KindDir && mergesIntoHeader(rects[i], inner)
+			// merging bands hides a level, which is the opposite of what
+			// KeepChains asks for
+			cn.InHeader = m.View.Headers && !m.KeepChains && cn.Kind == KindDir && mergesIntoHeader(rects[i], inner)
 			m.layoutNode(c)
 		}
 	case KindFile:

@@ -108,7 +108,7 @@ Every lens is optional; the defaults show the plain map.
 | Lens | What it does |
 |---|---|
 | **height** | 3D building height: *Nesting* (terraces), *Flat*, or a metric: lines, complexity, functions, churn, recent change, authors. **Terrace step** says whether a level's height scales with the box (a big folder gets a tall terrace) or is the same everywhere, so height reads as depth alone |
-| **nest folder chains** | a folder holding only one folder is one box (`cmd/scrap`) unless this is on, which draws every level; it re-indexes the repository |
+| **nest folder chains** | a folder holding only one folder is one box (`cmd/scrap`) unless this is on, which draws every level — in the map, in the Explorer, and as its own header band; it re-indexes the repository |
 | **card levels** | with the cards layout: how many levels from the root are cards before the packed treemap takes over (0 = all the way down) |
 | **layout** | how a folder's contents are packed: *squarified* (squarest boxes), *strip* (reading order), *rows* / *columns* (one band per item, alternating direction with depth), *cards* (a grid of equal cards with air — size stops carrying weight, so a folder becomes countable) |
 | **color** | *Area* hue, *Cluster* (files grouped by imports, calls and git co-change rather than folders; hubs most of the code imports shown apart), or the same metrics as a blue → red percentile ramp |

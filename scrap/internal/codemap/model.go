@@ -113,17 +113,20 @@ type Symbol struct {
 
 // Map is the whole in-memory model of one source tree.
 type Map struct {
-	Root     string
-	Nodes    []Node
-	Files    []File
-	Symbols  []Symbol // sorted by Lower, then path, then line
-	World    Rect     // repo bounds in world space
-	Stats    Stats
-	View     View               // how the map is shaped and colored (see WithView)
-	Deps     *Deps              // file dependency graph (shared by every view of the map)
-	Callers  map[string][]int32 // callee name → scopes calling it
-	GitTime  int64              // when git metrics were read (0 = not loaded)
-	Clusters *Clustering        // file clusters, when the cluster lens asked for them
+	Root    string
+	Nodes   []Node
+	Files   []File
+	Symbols []Symbol // sorted by Lower, then path, then line
+	World   Rect     // repo bounds in world space
+	Stats   Stats
+	View    View               // how the map is shaped and colored (see WithView)
+	Deps    *Deps              // file dependency graph (shared by every view of the map)
+	Callers map[string][]int32 // callee name → scopes calling it
+	GitTime int64              // when git metrics were read (0 = not loaded)
+	// KeepChains records that the index kept single-child folder chains
+	// nested; the layout then never merges their header bands either.
+	KeepChains bool
+	Clusters   *Clustering // file clusters, when the cluster lens asked for them
 
 	charAspect float64
 	sortByName bool

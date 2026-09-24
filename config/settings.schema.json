@@ -1026,7 +1026,7 @@
           "default": false,
           "scope": "server",
           "label": "Nest folder chains",
-          "desc": "A folder holding nothing but one folder is drawn as a single box (cmd/scrap). Turn this on to see every level as its own box. This changes the tree, so the repository is indexed again."
+          "desc": "A folder holding nothing but one folder is drawn as a single box (cmd/scrap). Turn this on to see every level as its own box, in the map and in the Explorer; header bands stop merging too. This changes the tree, so the repository is indexed again."
         },
         {
           "id": "layout.algorithm",

@@ -149,6 +149,7 @@ func Build(root string, opt Options) (*Map, error) {
 	}
 
 	m := assemble(abs, top, files, opt)
+	m.KeepChains = opt.KeepChains
 	imports := map[int32][]Import{}
 	js := map[int32]*jsModule{}
 	for i := range m.Files {
