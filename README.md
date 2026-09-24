@@ -30,7 +30,19 @@ The viewers only stream tiles, draw them, and handle the UI.
 
 ## Run
 
-Requires Go 1.26+ and Godot 4.7. On Windows, `build-n-run.bat [repo-path]` builds the server and opens the viewer (set `GODOT` to override the Godot path). Or step by step:
+Requires Go 1.26+ and Godot 4.7. On Windows, `build.cmd` is the one entry point (set `GODOT` to override the Godot path):
+
+| | |
+|---|---|
+| `build` | build the scrap server |
+| `build run [repo]` | build, then open the viewer on a repository (no path = this one) |
+| `build serve [repo] [addr]` | build, then run the server in this console |
+| `build test [pattern]` | `go vet` and `go test` (pattern filters with `-run`) |
+| `build shot out.png [viewer args]` | scripted viewer run on a port of its own: it flies where you tell it, saves a screenshot and quits |
+| `build dist` | package the viewer, the server and `config/` into `dist\` |
+| `build import` \| `clean` \| `stop` | re-import the Godot project, remove build output, stop a leftover server |
+
+Or step by step:
 
 ```bash
 cd scrap && go build -o bin/scrap.exe ./cmd/scrap

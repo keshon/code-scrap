@@ -154,7 +154,7 @@ func _on_text(s: String) -> void:
 	match data.get("op", ""):
 		"hello":
 			if int(data.get("protocol", 0)) != PROTOCOL:
-				push_error("scrap server speaks protocol %d, this viewer %d: rebuild scrap (build-n-run.bat) or stop the old server" % [int(data.get("protocol", 0)), PROTOCOL])
+				push_error("scrap server speaks protocol %d, this viewer %d: rebuild scrap (build.cmd) or stop the old server" % [int(data.get("protocol", 0)), PROTOCOL])
 			# a server left over from another session may be mapping a
 			# different folder: ask it to switch to ours
 			if _repo_explicit and not _open_sent and _norm(data.get("root", "")) != _norm(repo):

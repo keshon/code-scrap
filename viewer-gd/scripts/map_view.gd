@@ -791,9 +791,12 @@ func _draw_labels() -> void:
 			var c := {"prio": r.size.x, "kind": kind, "color": rec.label_colors[i], "text": text,
 				"max_w": r.size.x - 8.0, "size": fs}
 			if kind == 2:
-				# a legend sitting on the scope's top border
+				# a legend sitting on the scope's top border, hung off its
+				# right end: a signature starts at the left margin, so a name
+				# over the start of the line covers the code it names
 				c.size = clampi(int(r.size.y * 0.85), 8, fs)
-				c.pos = r.position
+				c.right = true
+				c.pos = Vector2(minf(r.end.x, size.x) - 4.0, r.position.y)
 			else:
 				c.pos = Vector2(max(r.position.x, 0.0) + 2.0, max(r.position.y, 0.0) + 1.0)
 				if kind == 1:
