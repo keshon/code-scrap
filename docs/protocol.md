@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **11** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **12** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 12 | `options.look.algorithm` gains rows · columns · cards, and `look.evenSteps` makes every terrace the same height. (Version bumped because an older server ignores the new values and quietly lays the map out the old way.) |
 | 11 | A relation's `toLine` is kept when `to` is a declaration with a box of its own, so an arc lands on the line the declaration starts at rather than in the middle of its body. (Version bumped so a viewer talking to a server from before this cannot silently aim at bodies.) |
 | 10 | Relation edges are `[from, to, fromLine, toLine]` instead of `[from, to]`: where the relation starts in the From file (the import statement, the call) and where it lands in the To file. `to` is the imported or called declaration itself when that has a box of its own. Replies carry `lines`, the rect of every anchored line. |
 | 9 | `node`/`pick` carry `base`, the height a box stands on (3D highlights span base..top). In 3D tiles, file labels carry the whole box rect too (folder labels already did), so viewers can place a name on the roof's header strip or its middle. |
@@ -60,7 +61,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 11, "gen": 3,
+  "op": "hello", "protocol": 12, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,
