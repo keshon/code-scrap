@@ -104,6 +104,14 @@
           "desc": "Outline the box under the cursor."
         },
         {
+          "id": "viewport.hover_tip",
+          "surface": "display",
+          "type": "bool",
+          "default": true,
+          "label": "Hover card",
+          "desc": "The small card that follows the cursor with the name and size of what is under it (folder headers mode)."
+        },
+        {
           "id": "viewport.search_hits",
           "surface": "display",
           "type": "bool",

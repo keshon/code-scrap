@@ -11,6 +11,7 @@ extends Control
 signal hovered(info: Dictionary)
 signal selected(node_id: int)
 signal camera_changed
+signal jumped   ## about to travel somewhere: one step for the history
 
 const TILE_PX := 256.0
 
@@ -660,6 +661,7 @@ func select_node(id: int, rect: Array, header := []) -> void:
 func _focus_hovered() -> void:
 	if hover.is_empty() or int(hover.get("node", -1)) < 0:
 		return
+	jumped.emit()
 	var t := fit_rect(hover.rect)
 	fly_to(t[0], t[1], t[2])
 
@@ -740,7 +742,7 @@ func _draw_overlay() -> void:
 			o.draw_rect(sr, Color(sel_c, float(Settings.get_value("highlight.fill")) * 0.6))
 		if style == "silhouette" or style == "both" or headers:
 			_outline(sr, sel_c, Settings.get_value("lines.selected_width"))
-	if headers and show_hover and _arc_hover < 0:
+	if headers and show_hover and _arc_hover < 0 and Settings.get_value("viewport.hover_tip"):
 		_draw_hover_tip()
 
 
@@ -972,6 +974,7 @@ func _draw_arc_tip() -> void:
 ## The view travels, the selection stays: an arc is a route, not a choice.
 func follow_arc(i: int) -> void:
 	var arc: Dictionary = _arc_lines[i]
+	jumped.emit()
 	if _arc_back.get("key", "") == arc.key:
 		var back: Dictionary = _arc_back
 		_arc_back = {}

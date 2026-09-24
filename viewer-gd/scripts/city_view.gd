@@ -10,6 +10,7 @@ extends Control
 signal hovered(info: Dictionary)
 signal selected(node_id: int)
 signal exited(cx: float, cy: float, zoom: float)
+signal jumped   ## about to travel somewhere: one step for the history
 
 const S := 1000.0            # render units per world unit
 const TILE_PX := 256.0
@@ -929,6 +930,7 @@ func _gui_input(ev: InputEvent) -> void:
 				_dragging = false
 				_press_pos = mb.position
 				if mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT and hover.has("rect"):
+					jumped.emit()
 					focus_rect(hover.rect, float(hover.get("top", 0.0)))
 			elif _drag.get("button", -1) == mb.button_index:
 				if not _dragging and _drag.get("click", "") == "select":

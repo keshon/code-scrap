@@ -66,6 +66,7 @@ Mouse and keys come from a keymap (`config/keymaps/*.json`, picked in **Settings
 | `Esc` | close settings / clear search |
 | `Ctrl+,` | settings |
 | `F12` | diagnostics overlay (frame time, tile and text streaming, redraws) |
+| Mouse **back** / **forward**, `Alt+Left` / `Alt+Right` | step back and forward through the places you have been, like a browser |
 | `Ctrl+1` … `9` / `1` … `9` | save a bookmark (view, camera, selection) / go back to it |
 | `]` / `[` | step through the selection's relations (Inspector list) |
 
@@ -87,10 +88,10 @@ Every control has one home ([docs/PLAN.md](docs/PLAN.md), "UI map").
 |---|---|
 | Top bar | Explorer toggle, repository (open, recent), 2D / 3D, settings preset, **search** (files and folders by path, symbols by prefix; `>` for commands), settings |
 | Explorer (left) | the file tree, down to functions; follows the selection |
-| Viewport header | breadcrumb (click a segment to select it, › to list what is inside) · Camera menu · ☰ display toggles |
+| Viewport header | breadcrumb (click a segment to select it, › to list what is inside) · Camera menu (framing, back / forward) · ☰ display toggles |
 | Legend (bottom right) | what colors and arcs mean; click an area to frame it |
 | Right pane | **Inspector** (with clickable imports / callers) · **View** (lenses, importance, relations) |
-| ☰ display menu | what the viewport draws: labels, code text, line numbers, hover, search hits, legend, grid, minimap, folder headers, **focus the selection** (dim everything outside it) and **fill functions** (function bodies as filled blocks — with the code text off, a map of functions rather than files) |
+| ☰ display menu | what the viewport draws: labels, code text, line numbers, hover, search hits, legend, grid, minimap, folder headers, the **hover card** under the cursor, **focus the selection** (dim everything outside it) and **fill functions** (function bodies as filled blocks — with the code text off, a map of functions rather than files) |
 | Status bar | server, index progress, hover, keymap hints, fps |
 
 ### Importance rules

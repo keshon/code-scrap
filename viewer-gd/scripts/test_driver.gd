@@ -24,6 +24,8 @@ extends Node
 ##   --later=id:value  change a setting after --wait/2 (rebuilds the layout)
 ##   --arc=<i>         follow the i-th drawn arc after --wait/2 (and again at
 ##                     --wait*0.8 with --arcback=1, which should come back)
+##   --nav=back,forward  run these history steps, one every --wait*0.1, from
+##                     --wait*0.6 on, printing the camera around each
 
 var shell: Node   # main.gd
 var args := {}
@@ -85,6 +87,14 @@ func _ready() -> void:
 				print("arc back:   camera ", m.cx, " ", m.cy, " zoom ", m.zoom)
 				if int(args.arc) < m._arc_lines.size():
 					m.follow_arc(int(args.arc)))
+	if args.has("nav"):
+		var wait := float(args.get("wait", 4))
+		var steps := String(args.nav).split(",")
+		for i in steps.size():
+			var step: String = steps[i]
+			get_tree().create_timer(wait * (0.6 + 0.1 * i)).timeout.connect(func():
+				print("nav ", step, ": from ", _cam_str(), " back ", shell._back.size(), " fwd ", shell._fwd.size())
+				shell._do_action("nav_" + step))
 	if args.has("later"):
 		var kv := String(args.later)
 		var sid := kv.get_slice(":", 0)
@@ -119,6 +129,11 @@ func _ready() -> void:
 	img.save_png(args.shot)
 	print("saved ", args.shot)
 	get_tree().quit()
+
+
+func _cam_str() -> String:
+	var m = shell.map
+	return "%.4f %.4f z%.2f" % [m.cx, m.cy, m.zoom]
 
 
 ## Waits for git history (up to 10 s) so git lenses are available.

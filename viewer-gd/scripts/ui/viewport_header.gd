@@ -12,6 +12,7 @@ signal action(name: String)
 
 const CAMERA := [["Frame all", "frame_all", "A"], ["Frame selected", "frame_selected", "F"],
 	["Deselect", "deselect", "Q"], ["Select parent", "select_parent", "Backspace"], ["", "", ""],
+	["Back", "nav_back", "Alt+Left"], ["Forward", "nav_forward", "Alt+Right"], ["", "", ""],
 	["Switch 2D / 3D", "toggle_view", "Tab"]]
 const MAX_CRUMBS := 3
 const ISLAND_H := 26.0   # the islands sit over the map: keep them slim

@@ -340,7 +340,7 @@ func _build() -> Theme:
 	# one step down, for the islands that float over the map: less padding,
 	# the small text size, so the bar can be slim without feeling cramped
 	var slimpad := maxf((h * 0.72 - small * 1.4) * 0.5, 1.0)
-	var slim := Vector4(slimpad + 4.0, slimpad, slimpad + 4.0, slimpad)  # padding in proportion
+	var slim := Vector4(slimpad + 2.0, slimpad, slimpad + 2.0, slimpad)  # a chip, not a pill
 	th.set_type_variation("SlimButton", "Button")
 	th.set_stylebox("normal", "SlimButton", _empty(slim))
 	th.set_stylebox("hover", "SlimButton", _sb(s3, rs, slim))

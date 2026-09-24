@@ -38,6 +38,7 @@ const COMMANDS := [
 	["relation_next", "Next relation", "]"], ["relation_prev", "Previous relation", "["],
 	["bookmark_1", "Go to bookmark 1", "1"], ["bookmark_save_1", "Save bookmark 1", "Ctrl+1"],
 	["toggle_minimap", "Toggle minimap", ""], ["toggle_line_numbers", "Toggle line numbers", ""],
+	["nav_back", "Back", "Alt+Left"], ["nav_forward", "Forward", "Alt+Right"],
 ]
 
 var client: ScrapClient
@@ -73,6 +74,9 @@ var _selected_path := ""     # survives generations (ids do not)
 var _rel_anchor := -1        # whose relations are listed
 var _stepping := false       # selecting a relation target: keep the anchor's relations
 var _bookmark_2d := {}       # camera to apply once the 3D view has tilted back
+var _back: Array[Dictionary] = []   # places we came from, newest last
+var _fwd: Array[Dictionary] = []    # places "back" came from
+var _travelling := false            # inside a back/forward jump: record nothing
 
 
 func _ready() -> void:
@@ -89,8 +93,10 @@ func _ready() -> void:
 	city.attach(client)
 	map.hovered.connect(_on_hover)
 	map.selected.connect(_on_selected)
+	map.jumped.connect(nav_push)
 	city.hovered.connect(_on_hover)
 	city.selected.connect(_on_selected)
+	city.jumped.connect(nav_push)
 	city.exited.connect(_on_city_exited)
 	client.hello.connect(_on_hello)
 	client.progress.connect(_on_progress)
@@ -331,8 +337,59 @@ func _go_bookmark(n: int) -> bool:
 	if b.is_empty():
 		status.set_status("No bookmark %d · Ctrl+%d saves one" % [n, n])
 		return true
-	var cam: Dictionary = b.get("cam", {})
-	if b.get("view", "2d") == "3d":
+	nav_push()
+	_nav_apply(b)
+	status.set_status("Bookmark %d" % n)
+	return true
+
+
+# ------------------------------------------------------------------ history
+
+const HISTORY_MAX := 64
+
+## Remembers where we stand, before a jump takes us elsewhere. Like a
+## browser: going somewhere new forgets the way forward.
+func nav_push() -> void:
+	if _travelling:
+		return
+	var here := _nav_state()
+	if not _back.is_empty() and _same_place(_back[-1], here):
+		return
+	_back.append(here)
+	if _back.size() > HISTORY_MAX:
+		_back.pop_front()
+	_fwd.clear()
+
+
+## Back (or forward) one step: the mouse's own back/forward buttons, or
+## Alt+Left / Alt+Right.
+func nav_go(forward: bool) -> bool:
+	var from := _fwd if forward else _back
+	var to := _back if forward else _fwd
+	if from.is_empty():
+		status.set_status("Nothing to go " + ("forward to" if forward else "back to"))
+		return true
+	to.append(_nav_state())
+	var there: Dictionary = from.pop_back()
+	_travelling = true
+	_nav_apply(there)
+	_travelling = false
+	var where := String(there.get("path", "")).get_file()
+	status.set_status(("Forward" if forward else "Back") + ("" if where == "" else " · " + where))
+	return true
+
+
+## The view, the camera and the selection: enough to come back.
+func _nav_state() -> Dictionary:
+	return {"view": "3d" if is_3d() else "2d",
+		"cam": city.camera_state() if is_3d() else map.camera_state(),
+		"path": _selected_path}
+
+
+## Flies to a remembered place. Bookmarks travel the same way.
+func _nav_apply(s: Dictionary) -> void:
+	var cam: Dictionary = s.get("cam", {})
+	if s.get("view", "2d") == "3d":
 		if not is_3d():
 			set_view(true)
 		city.fly_to_state(cam)
@@ -341,10 +398,21 @@ func _go_bookmark(n: int) -> bool:
 		set_view(false)
 	else:
 		map.fly_to(cam.cx, cam.cy, cam.zoom)
-	if String(b.get("path", "")) != "":
+	if String(s.get("path", "")) != "":
 		_pending = {"select": true, "fly": false}
-		_node_req = client.request("node", {"path": b.path})
-	status.set_status("Bookmark %d" % n)
+		_node_req = client.request("node", {"path": s.path})
+
+
+## Two places are the same when the camera and the selection are: pressing
+## the same key twice should not fill the history with copies.
+static func _same_place(a: Dictionary, b: Dictionary) -> bool:
+	if a.get("view", "") != b.get("view", "") or a.get("path", "") != b.get("path", ""):
+		return false
+	var ca: Dictionary = a.get("cam", {})
+	var cb: Dictionary = b.get("cam", {})
+	for k in ca:
+		if absf(float(ca[k]) - float(cb.get(k, 0.0))) > 1e-4:
+			return false
 	return true
 
 
@@ -354,11 +422,24 @@ func _go_bookmark(n: int) -> bool:
 func select_and_frame(id: int, fly: bool) -> void:
 	if id < 0:
 		return
+	if fly:
+		nav_push()
 	_pending = {"select": true, "fly": fly and not args.has("nofly")}
 	_node_req = client.request("node", {"node": id})
 
 
 # ---------------------------------------------------------------- actions
+
+## The two extra mouse buttons are named back and forward by the hardware,
+## so they are wired to exactly that and not left to the keymap.
+func _unhandled_input(ev: InputEvent) -> void:
+	var mb := ev as InputEventMouseButton
+	if mb == null or not mb.pressed:
+		return
+	if mb.button_index == MOUSE_BUTTON_XBUTTON1 or mb.button_index == MOUSE_BUTTON_XBUTTON2:
+		nav_go(mb.button_index == MOUSE_BUTTON_XBUTTON2)
+		get_viewport().set_input_as_handled()
+
 
 func _unhandled_key_input(ev: InputEvent) -> void:
 	var k := ev as InputEventKey
@@ -386,15 +467,19 @@ func _do_action(action: String) -> bool:
 		"search":
 			search.focus()
 		"frame_all":
+			nav_push()
 			if is_3d():
 				city.home()
 			else:
 				map.home()
 		"frame_selected":
+			nav_push()
 			if is_3d():
 				city.frame_selected()
 			else:
 				map.frame_selected()
+		"nav_back", "nav_forward":
+			return nav_go(action == "nav_forward")
 		"deselect":
 			map.deselect()
 			city.deselect()
@@ -676,6 +761,8 @@ func _push_arcs() -> void:
 
 func _go_to_hit(h: Dictionary, fly: bool) -> void:
 	fly = fly and not args.has("nofly")
+	if fly:
+		nav_push()
 	if is_3d():
 		city.current_hit = {"rect": h.rect, "top": float(h.top)}
 		city.select(int(h.node), h.rect, float(h.top), "scope" if h.kind != "block" else "file")

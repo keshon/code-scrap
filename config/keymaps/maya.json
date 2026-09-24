@@ -193,6 +193,20 @@
     {
       "action": "relation_prev",
       "key": "BracketLeft"
+    },
+    {
+      "action": "nav_back",
+      "key": "Left",
+      "mods": [
+        "alt"
+      ]
+    },
+    {
+      "action": "nav_forward",
+      "key": "Right",
+      "mods": [
+        "alt"
+      ]
     }
   ]
 }
