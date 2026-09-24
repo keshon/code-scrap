@@ -992,6 +992,15 @@
           "desc": "How siblings are placed: size = biggest first · name = alphabetical (boxes move least when lenses or files change) · kind = folders first, then files, each alphabetical."
         },
         {
+          "id": "layout.keep_chains",
+          "surface": "view",
+          "type": "bool",
+          "default": false,
+          "scope": "server",
+          "label": "Nest folder chains",
+          "desc": "A folder holding nothing but one folder is drawn as a single box (cmd/scrap). Turn this on to see every level as its own box. This changes the tree, so the repository is indexed again."
+        },
+        {
           "id": "layout.algorithm",
           "surface": "view",
           "type": "enum",

@@ -27,6 +27,7 @@ type Options struct {
 	SortByName bool       // stable alphabetical placement instead of largest-first
 	Precise    bool       // run the tree-sitter pass (slower, exact scopes)
 	NoGit      bool       // ignore git and walk the file system
+	KeepChains bool       // keep a/b/c as three nested boxes instead of one
 	CharAspect float64    // glyph width / line height of the text font (0 = default)
 	Cache      *FileCache // reuse analysis of unchanged files (nil = parse everything)
 	Progress   Progress
@@ -427,7 +428,9 @@ func collapse(n *tnode, isRoot bool) {
 
 func assemble(abs string, top *tnode, raw []rawFile, opt Options) *Map {
 	computeWeights(top, raw)
-	collapse(top, true)
+	if !opt.KeepChains {
+		collapse(top, true)
+	}
 	m := &Map{Root: abs, Callers: map[string][]int32{}}
 	m.Files = make([]File, 0, len(raw))
 

@@ -441,6 +441,7 @@ func _send_server_settings() -> void:
 		if id.begins_with("importance."):
 			weights[id.substr(11)] = Settings.get_value(id)
 	client.request("options", {"weights": weights, "rules": Settings.get_value("importance.rules"),
+		"keepChains": Settings.get_value("layout.keep_chains"),
 		"gitSince": Settings.get_value("git.since"),
 		"look": {"order": Settings.get_value("layout.order"), "algorithm": Settings.get_value("layout.algorithm"),
 			"palette": Settings.get_value("look.palette"), "lineNumbers": Settings.get_value("text.line_numbers"),

@@ -54,7 +54,8 @@ type request struct {
 	Weights  map[string]float64 `json:"weights"`
 	Rules    *string            `json:"rules"` // importance rules: "glob = weight; …"
 	GitSince *string            `json:"gitSince"`
-	Look     *Look              `json:"look"` // order, algorithm, palette, line numbers
+	Look     *Look              `json:"look"`       // order, algorithm, palette, line numbers
+	Keep     *bool              `json:"keepChains"` // index option: folder chains stay nested
 	Node     int32              `json:"node"`
 	X        float64            `json:"x"`
 	Y        float64            `json:"y"`
@@ -227,6 +228,9 @@ func (ss *session) handle(req request) {
 					ss.writeJSON(map[string]any{"op": "error", "id": req.ID, "error": err.Error()})
 				}
 			}()
+		}
+		if req.Keep != nil {
+			ss.srv.SetKeepChains(*req.Keep)
 		}
 		if req.Look != nil {
 			go ss.srv.SetLook(*req.Look)

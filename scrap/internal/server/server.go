@@ -210,6 +210,24 @@ func (s *Server) SetLook(l Look) {
 	}
 }
 
+// SetKeepChains decides whether a chain of single-child folders stays one
+// box ("a/b/c") or becomes three nested ones. It changes the tree itself,
+// so the root is indexed again.
+func (s *Server) SetKeepChains(keep bool) {
+	s.mu.Lock()
+	same := keep == s.Options.KeepChains
+	s.Options.KeepChains = keep
+	root := s.root
+	s.mu.Unlock()
+	if !same && root != "" {
+		go func() {
+			if err := s.Open(root); err != nil {
+				log.Printf("re-index after keepChains: %v", err)
+			}
+		}()
+	}
+}
+
 // SetImportance changes the importance weights (by class name) and the
 // user's rules ("glob = weight; …"); the open repo's .scrap.json rules are
 // applied after them.

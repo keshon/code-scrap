@@ -295,17 +295,20 @@ func _update_arcs() -> void:
 		var ctrl: Vector3 = (a + b) * 0.5 + Vector3.UP * (max(a.y, b.y) - (a.y + b.y) * 0.5 + span * rise)
 		var c: Color = arc.color
 		var dashed: bool = arc.get("dashed", false)
+		# a 3D line is one pixel wide whatever the distance, so half of it
+		# missing reads as dust: keep the dashes long and lift the alpha
+		var lift := 1.45 if dashed else 1.0
 		var prev := a
 		for i in range(1, 25):
 			var t := i / 24.0
 			var p := a.lerp(ctrl, t).lerp(ctrl.lerp(b, t), t)
-			if dashed and i % 2 == 0:   # the kind as a line style, as in 2D
+			if dashed and i % 4 == 3:   # the kind as a line style, as in 2D
 				prev = p
 				continue
 			# fade toward the target end so direction reads without arrowheads
-			im.surface_set_color(Color(c, alpha * (1.0 - 0.6 * (t - 1.0 / 24.0))))
+			im.surface_set_color(Color(c, minf(alpha * lift * (1.0 - 0.6 * (t - 1.0 / 24.0)), 1.0)))
 			im.surface_add_vertex(prev)
-			im.surface_set_color(Color(c, alpha * (1.0 - 0.6 * t)))
+			im.surface_set_color(Color(c, minf(alpha * lift * (1.0 - 0.6 * t), 1.0)))
 			im.surface_add_vertex(p)
 			prev = p
 	im.surface_end()
