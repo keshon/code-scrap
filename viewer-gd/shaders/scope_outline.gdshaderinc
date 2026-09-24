@@ -6,6 +6,7 @@
 // 2 type, 3 namespace), depth = nesting inside the file.
 
 global uniform float scrap_scope_opacity;
+global uniform float scrap_scope_fill;   // 0 outlines only · 1 filled bodies
 global uniform float scrap_scope_radius;      // physical px
 global uniform float scrap_scope_dash;        // 1 = dashed containers
 global uniform float scrap_scope_fade;

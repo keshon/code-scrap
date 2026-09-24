@@ -18,7 +18,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 13
+const Protocol = 14
 
 func hello(st *state) map[string]any {
 	m := st.m
@@ -461,14 +461,14 @@ func children(st *state, id int32) map[string]any {
 //	f32 × 16n|20n  MultiMesh instance buffer (2D | 3D layout, see tile.Boxes)
 //	i32 × n        node ids
 //	u32 nl         labels
-//	nl × { i32 id, u8 kind, u8 r, g, b, f32 x, y, w, h, top, u16 len, bytes }
+//	nl × { i32 id, u8 kind, u8 r, g, b, f32 x, y, w, h, top, u32 lines, u16 len, bytes }
 //	u32 nb         text blocks
 //	nb × { i32 file, u16 col, u16 seg, u16 rows, f32 x, y, w, h, top, u32 key }
 func encodeTile(st *state, k tile.Key, is3D bool) []byte {
 	b := tile.BoxTile(st.m, k, is3D)
 	size := 20 + 4 + len(b.Instances)*4 + len(b.IDs)*4 + 4 + 4 + len(b.Blocks)*34
 	for _, l := range b.Labels {
-		size += 4 + 1 + 3 + 20 + 2 + len(l.Text)
+		size += 4 + 1 + 3 + 20 + 4 + 2 + len(l.Text)
 	}
 	buf := make([]byte, 0, size)
 	le := binary.LittleEndian
@@ -496,6 +496,7 @@ func encodeTile(st *state, k tile.Key, is3D bool) []byte {
 		for _, f := range [5]float32{l.X, l.Y, l.W, l.H, l.Top} {
 			buf = le.AppendUint32(buf, math.Float32bits(f))
 		}
+		buf = le.AppendUint32(buf, uint32(l.Lines))
 		t := l.Text
 		if len(t) > 0xFFFF {
 			t = t[:0xFFFF]

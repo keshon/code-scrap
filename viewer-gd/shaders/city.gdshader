@@ -183,10 +183,11 @@ void fragment() {
 			vec2 near = p / pw;
 			vec2 far = (v_dims.xy - p) / pw;
 			float a = scope_outline(near, far, edges, FRAGCOORD.xy, kind, v_custom.z, w) * show;
-			if (a < 0.2) {
-				discard;
+			float body = scrap_scope_fill * 0.3 * show * scrap_scope_opacity;
+			if (max(a, body) < 0.08) {
+				discard;   // filled scopes turn the roofs into a map of functions
 			}
-			c = hue * 0.8;
+			c = hue * mix(0.35, 0.8, a);
 		} else {
 			// distance to the roof's real edges, in pixels
 			float big_ = 1e9;

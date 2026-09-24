@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **13** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **14** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 14 | Tile labels carry `u32 lines`, the source lines in the box (layouts with room, like cards, print it). `options.look.cardDepth` limits the cards layout to the levels near the root. |
 | 13 | `options.keepChains`: a chain of single-child folders stays nested instead of collapsing to one box. It changes the tree, so the server indexes the root again. |
 | 12 | `options.look.algorithm` gains rows · columns · cards, and `look.evenSteps` makes every terrace the same height. (Version bumped because an older server ignores the new values and quietly lays the map out the old way.) |
 | 11 | A relation's `toLine` is kept when `to` is a declaration with a box of its own, so an arc lands on the line the declaration starts at rather than in the middle of its body. (Version bumped so a viewer talking to a server from before this cannot silently aim at bodies.) |
@@ -53,7 +54,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 | `search` | `q` (symbol-name prefix), `page`, `size` (≤ 500) | `search` |
 | `edges` | `node` | relations: imports (file level) |
 | `calls` | `node` | relations: syntax-level call graph |
-| `options` | any of `keepChains` (re-indexes), `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince`, `look: {order (size · name · kind), algorithm (squarified · strip · rows · columns · cards), palette (pastel · neutral · cyan), lineNumbers, headers, evenSteps}` | no reply. The map rebuilds and a new `hello` follows when anything changed. |
+| `options` | any of `keepChains` (re-indexes), `view: {height, color, importance}`, `weights: {vendored, test, minified, asset, data}`, `rules` ("glob = weight; …", plus the repo's `.scrap.json`), `gitSince`, `look: {order (size · name · kind), algorithm (squarified · strip · rows · columns · cards), cardDepth, palette (pastel · neutral · cyan), lineNumbers, headers, evenSteps}` | no reply. The map rebuilds and a new `hello` follows when anything changed. |
 | `open` | `path` | new `hello` once indexed, or `{"op": "error", "error": …}` |
 
 ## Messages (server → viewer)
@@ -62,7 +63,7 @@ Every request is `{"op": …, "id": n, …}`. JSON replies echo `id`.
 
 ```json
 {
-  "op": "hello", "protocol": 13, "gen": 3,
+  "op": "hello", "protocol": 14, "gen": 3,
   "root": "D:/repo", "name": "repo",
   "world": [0, 0, 1, 0.625], "tilePx": 256, "maxZ": 24, "maxTop": 0.05,
   "precise": true, "git": true,

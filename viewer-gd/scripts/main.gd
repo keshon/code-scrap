@@ -453,7 +453,8 @@ func _send_server_settings() -> void:
 		"look": {"order": Settings.get_value("layout.order"), "algorithm": Settings.get_value("layout.algorithm"),
 			"palette": Settings.get_value("look.palette"), "lineNumbers": Settings.get_value("text.line_numbers"),
 			"headers": Settings.get_value("look.headers"),
-			"evenSteps": Settings.get_value("look.even_steps") == "even"}})
+			"evenSteps": Settings.get_value("look.even_steps") == "even",
+			"cardDepth": int(Settings.get_value("layout.cards_depth"))}})
 
 
 func _on_setting_changed(id: String, _v: Variant) -> void:

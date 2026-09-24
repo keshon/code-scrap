@@ -34,6 +34,7 @@ type Label struct {
 	Color      [3]uint8 // the box's outline color
 	X, Y, W, H float32
 	Top        float32 // 3D: roof height of the labelled box
+	Lines      int32   // source lines in the box, for layouts with room to say it
 	Text       string
 }
 
@@ -79,10 +80,10 @@ func BoxTile(m *codemap.Map, k Key, is3D bool) *Boxes {
 		if !r.Intersects(tr) || r.W*scale < minBoxPx || r.H*scale < minBoxPx {
 			return
 		}
-		if id != 0 { // the root box is the canvas, not drawn…
+		// the root box is the canvas, not drawn — except under folder
+		// headers, where it is a folder like any other, band and contour
+		if id != 0 || (m.View.Headers && !is3D) {
 			b.add(m, id, r, tr, scale)
-		} else if m.View.Headers && !is3D {
-			b.header(m, id, tr, scale) // …but it has a header band like any folder
 		}
 		switch n.Kind {
 		case codemap.KindDir:
@@ -120,7 +121,7 @@ func (b *Boxes) add(m *codemap.Map, id int32, r, tr codemap.Rect, scale float64)
 			// middle, as the viewer is set)
 			h = r
 		}
-		b.label(id, uint8(n.Kind), c, h, n.Top, tr, n.Name)
+		b.label(id, uint8(n.Kind), c, h, n.Top, tr, n.Name, n.Lines)
 	}
 }
 
@@ -135,7 +136,7 @@ func (b *Boxes) header(m *codemap.Map, id int32, tr codemap.Rect, scale float64)
 	c := BoxColor(m, n)
 	b.push(h, tr, c, KindHeader, float32(n.Depth), n.Top, id)
 	if h.H*scale >= minHeaderLabelPx {
-		b.label(id, uint8(n.Kind), c, h, n.Top, tr, m.HeaderName(id))
+		b.label(id, uint8(n.Kind), c, h, n.Top, tr, m.HeaderName(id), n.Lines)
 	}
 }
 
@@ -154,7 +155,7 @@ func (b *Boxes) addScope(m *codemap.Map, sid int32, f *codemap.File, tr codemap.
 		b.push(seg, tr, col, 2+float32(s.Scope)*0.1, float32(depthInFile), s.Top, sid)
 		if i == 0 && f.LH*scale >= 6 && seg.H*scale >= 3*f.LH*scale {
 			lh := codemap.Rect{X: seg.X + f.CW, Y: seg.Y - 0.55*f.LH, W: seg.W - f.CW, H: 0.9 * f.LH}
-			b.label(sid, 2|uint8(s.Scope)<<4, col, lh, s.Top, tr, s.Name)
+			b.label(sid, 2|uint8(s.Scope)<<4, col, lh, s.Top, tr, s.Name, s.Lines)
 		}
 	}
 }
@@ -200,10 +201,10 @@ func (b *Boxes) push(r, tr codemap.Rect, c [4]float32, kind, depth float32, top 
 	b.IDs = append(b.IDs, id)
 }
 
-func (b *Boxes) label(id int32, kind uint8, c [4]float32, r codemap.Rect, top float64, tr codemap.Rect, text string) {
+func (b *Boxes) label(id int32, kind uint8, c [4]float32, r codemap.Rect, top float64, tr codemap.Rect, text string, lines int64) {
 	inv := 1 / tr.W
 	b.Labels = append(b.Labels, Label{
-		ID: id, Kind: kind, Text: text, Color: [3]uint8{uint8(c[0] * 255), uint8(c[1] * 255), uint8(c[2] * 255)}, Top: float32(top * inv),
+		ID: id, Kind: kind, Text: text, Lines: int32(min(lines, 1<<31-1)), Color: [3]uint8{uint8(c[0] * 255), uint8(c[1] * 255), uint8(c[2] * 255)}, Top: float32(top * inv),
 		X: float32((r.X - tr.X) * inv), Y: float32((r.Y - tr.Y) * inv),
 		W: float32(r.W * inv), H: float32(r.H * inv),
 	})

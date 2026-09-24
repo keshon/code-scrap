@@ -36,6 +36,7 @@ const SHADER_GLOBALS := {
 	"lines.min_box_px": ["scrap_line_min_box", "px"],
 	"lines.depth_tone": ["scrap_depth_tone", "f"],
 	"scopes.opacity": ["scrap_scope_opacity", "f"],
+	"scopes.fill": ["scrap_scope_fill", "b"],
 	"scopes.radius": ["scrap_scope_radius", "px"],
 	"scopes.dash": ["scrap_scope_dash", "b"],
 	"scopes.nested_fade": ["scrap_scope_fade", "f"],

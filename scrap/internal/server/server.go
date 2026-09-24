@@ -193,6 +193,7 @@ type Look struct {
 	LineNumbers bool   `json:"lineNumbers"`
 	Headers     bool   `json:"headers"`
 	EvenSteps   bool   `json:"evenSteps"`
+	CardDepth   int    `json:"cardDepth"`
 }
 
 // SetLook changes layout order and algorithm, palette, line numbers and
@@ -201,9 +202,10 @@ func (s *Server) SetLook(l Look) {
 	s.mu.Lock()
 	v := &s.view
 	changed := l.Order != v.Order || l.Algorithm != v.Algorithm || l.Palette != v.Palette ||
-		l.LineNumbers != v.LineNumbers || l.Headers != v.Headers || l.EvenSteps != v.EvenSteps
+		l.LineNumbers != v.LineNumbers || l.Headers != v.Headers || l.EvenSteps != v.EvenSteps ||
+		l.CardDepth != v.CardDepth
 	v.Order, v.Algorithm, v.Palette = l.Order, l.Algorithm, l.Palette
-	v.LineNumbers, v.Headers, v.EvenSteps = l.LineNumbers, l.Headers, l.EvenSteps
+	v.LineNumbers, v.Headers, v.EvenSteps, v.CardDepth = l.LineNumbers, l.Headers, l.EvenSteps, l.CardDepth
 	s.mu.Unlock()
 	if changed {
 		s.rebuild()

@@ -12,7 +12,7 @@ signal text_received(block: Dictionary)
 signal font_ready
 
 const TILE_PX := 256
-const PROTOCOL := 13   ## docs/protocol.md; must match the server's hello.protocol
+const PROTOCOL := 14   ## docs/protocol.md; must match the server's hello.protocol
 
 var url := "ws://127.0.0.1:7878/ws"
 var repo := ""        ## folder to index when we launch the server
@@ -212,9 +212,10 @@ func _on_binary(b: PackedByteArray) -> void:
 		l.color = Color8(b.decode_u8(off + 5), b.decode_u8(off + 6), b.decode_u8(off + 7))
 		l.rect = Rect2(b.decode_float(off + 8), b.decode_float(off + 12), b.decode_float(off + 16), b.decode_float(off + 20))
 		l.top = b.decode_float(off + 24)
-		var ln := b.decode_u16(off + 28)
-		l.text = b.slice(off + 30, off + 30 + ln).get_string_from_utf8()
-		off += 30 + ln
+		l.lines = b.decode_u32(off + 28)
+		var ln := b.decode_u16(off + 32)
+		l.text = b.slice(off + 34, off + 34 + ln).get_string_from_utf8()
+		off += 34 + ln
 		labels.append(l)
 	t.labels = labels
 	var blocks := []

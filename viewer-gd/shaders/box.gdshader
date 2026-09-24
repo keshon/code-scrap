@@ -61,8 +61,10 @@ void fragment() {
 		float rule = (edges & 8) != 0 ? step(far.y, 1.0) : 0.0;
 		COLOR = vec4(mix(hue * 0.8, hue * 0.35, rule), 1.0);
 	} else if (v_custom.y > 1.5) {
-		float a = scope_outline(near, far, edges, fc, v_custom.y, v_custom.z, w)
-			* smoothstep(scrap_line_min_box * 0.5, scrap_line_min_box, true_px);
+		float shown = smoothstep(scrap_line_min_box * 0.5, scrap_line_min_box, true_px);
+		float a = scope_outline(near, far, edges, fc, v_custom.y, v_custom.z, w) * shown;
+		// filled scopes turn the map into one of functions rather than files
+		a = max(a, scrap_scope_fill * 0.22 * shown * scrap_scope_opacity);
 		COLOR = vec4(hue, a);
 	} else {
 		// tiny boxes read as solid color cells; big ones as dark rooms that

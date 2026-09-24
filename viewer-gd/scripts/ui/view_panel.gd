@@ -58,7 +58,7 @@ func _ready() -> void:
 	vb.add_child(SettingRow.new("git.since", true))
 	vb.add_child(HSeparator.new())
 	vb.add_child(_captioned(_section("Layout"), _info("How boxes are arranged inside each folder. Hover a setting's name for what it does.")))
-	for id in ["layout.keep_chains", "layout.order", "layout.algorithm"]:
+	for id in ["layout.keep_chains", "layout.order", "layout.algorithm", "layout.cards_depth"]:
 		vb.add_child(_captioned(SettingRow.new(id, true), _info(Settings.defs[id].desc)))
 
 	vb.add_child(HSeparator.new())

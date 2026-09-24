@@ -100,6 +100,7 @@ class TileRec:
 	var label_rects: PackedFloat64Array  # world x,y,w,h per label
 	var label_texts: PackedStringArray
 	var label_colors: PackedColorArray
+	var label_lines: PackedInt32Array
 	var blocks: Array  # text blocks in world units: {file, col, seg, rows, x, y, w, h}
 
 
@@ -490,6 +491,7 @@ func _on_tile(t: Dictionary) -> void:
 		rec.label_rects.append_array([ox + r.position.x * ts, oy + r.position.y * ts, r.size.x * ts, r.size.y * ts])
 		rec.label_texts.append(l.text)
 		rec.label_colors.append(l.color)
+		rec.label_lines.append(int(l.get("lines", 0)))
 	rec.node = node
 	node.visible = false
 	_tiles_root.add_child(node)
@@ -750,6 +752,9 @@ func _draw_labels() -> void:
 	var fs: int = Settings.get_value("labels.font_size")
 	var min_box: float = Settings.get_value("labels.min_box_px")
 	var headers: bool = Settings.get_value("look.headers")
+	# the cards layout leaves air around every box: room enough to say how
+	# much code each one holds, which the packed treemap never has
+	var counts: bool = Settings.get_value("layout.algorithm") == "cards"
 	var heads := []   # folder names printed in their header bands
 	for key: Vector3i in _tiles:
 		var rec: TileRec = _tiles[key]
@@ -766,7 +771,10 @@ func _draw_labels() -> void:
 			if headers and kind == 0:
 				# r is the header band: the name goes inside it, sized to fit
 				if r.size.y >= 9.0 and r.size.x >= 30.0 and view.intersects(r):
-					heads.append({"rect": r, "text": rec.label_texts[i], "color": rec.label_colors[i]})
+					var head_text: String = rec.label_texts[i]
+					if counts and rec.label_lines[i] > 0 and r.size.x >= 150.0:
+						head_text += "   %s lines" % Fmt.num(rec.label_lines[i])
+					heads.append({"rect": r, "text": head_text, "color": rec.label_colors[i]})
 				continue
 			if kind == 2:
 				if r.size.y < 7.0 or r.size.x < 30.0:
@@ -775,7 +783,10 @@ func _draw_labels() -> void:
 				continue
 			if not view.intersects(r):
 				continue
-			var c := {"prio": r.size.x, "kind": kind, "color": rec.label_colors[i], "text": rec.label_texts[i],
+			var text: String = rec.label_texts[i]
+			if counts and kind == 1 and rec.label_lines[i] > 0 and r.size.x >= 150.0:
+				text += "   %s lines" % Fmt.num(rec.label_lines[i])
+			var c := {"prio": r.size.x, "kind": kind, "color": rec.label_colors[i], "text": text,
 				"max_w": r.size.x - 8.0, "size": fs}
 			if kind == 2:
 				# a legend sitting on the scope's top border
@@ -1016,7 +1027,9 @@ func _pick_arc(p: Vector2) -> int:
 ## everything but them (and the selection).
 func _update_dim() -> void:
 	var amount: float = Settings.get_value("look.focus_dim")
-	var active: bool = amount > 0.0 and ((not hit_files.is_empty() and Settings.get_value("viewport.search_hits")) \
+	var focus: bool = Settings.get_value("viewport.focus") and selection_rect.size() == 4
+	var active: bool = amount > 0.0 and (focus \
+		or (not hit_files.is_empty() and Settings.get_value("viewport.search_hits")) \
 		or not arcs.is_empty())
 	_dim.visible = active
 	_mask_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
@@ -1036,6 +1049,9 @@ func _draw_mask() -> void:
 		var s := rect_to_screen(r)
 		_mask.draw_rect(Rect2(s.position * f, s.size * f).grow(2.0 * f), Color.WHITE)
 	_mask.draw_rect(Rect2(Vector2.ZERO, _mask.size), Color.BLACK)
+	if Settings.get_value("viewport.focus") and selection_rect.size() == 4:
+		keep.call(selection_rect)   # the selection alone: everything else dims
+		return
 	if Settings.get_value("viewport.search_hits"):
 		for r in hit_files:
 			keep.call(r)

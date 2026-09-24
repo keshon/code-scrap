@@ -155,6 +155,10 @@ scrap_headers={
 "type": "float",
 "value": 0.0
 }
+scrap_scope_fill={
+"type": "float",
+"value": 0.0
+}
 scrap_bevel={
 "type": "float",
 "value": 0.0

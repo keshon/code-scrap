@@ -192,7 +192,11 @@ func (m *Map) layoutNode(id int32) {
 				rects = treemap.Columns(ws, inner)
 			}
 		case LayoutCards:
-			rects = treemap.Cards(ws, inner, cardGap)
+			if m.View.CardDepth > 0 && int(n.Depth) >= m.View.CardDepth {
+				rects = treemap.Squarify(ws, inner) // deeper down, proportions again
+			} else {
+				rects = treemap.Cards(ws, inner, cardGap)
+			}
 		default:
 			rects = treemap.Squarify(ws, inner)
 		}

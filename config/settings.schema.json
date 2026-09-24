@@ -88,6 +88,14 @@
           "desc": "Folders get a header band in their color with the name inside, instead of outlines and floating name tags (2D)."
         },
         {
+          "id": "viewport.focus",
+          "surface": "display",
+          "type": "bool",
+          "default": false,
+          "label": "Focus the selection",
+          "desc": "Dim everything outside the selected folder or file, so one area can be read without losing where it sits."
+        },
+        {
           "id": "viewport.hover",
           "surface": "display",
           "type": "bool",
@@ -476,6 +484,14 @@
           "default": true,
           "label": "Dashed containers",
           "desc": "Classes, types and namespaces get a dashed outline, functions a solid one."
+        },
+        {
+          "id": "scopes.fill",
+          "surface": "display",
+          "type": "bool",
+          "default": false,
+          "label": "Fill functions",
+          "desc": "Give every function and class a filled body instead of an outline. With the code text off, the map becomes one of functions rather than files."
         },
         {
           "id": "scopes.nested_fade",
@@ -990,6 +1006,18 @@
           "scope": "server",
           "label": "Order",
           "desc": "How siblings are placed: size = biggest first · name = alphabetical (boxes move least when lenses or files change) · kind = folders first, then files, each alphabetical."
+        },
+        {
+          "id": "layout.cards_depth",
+          "surface": "view",
+          "type": "int",
+          "default": 0,
+          "min": 0,
+          "max": 6,
+          "step": 1,
+          "scope": "server",
+          "label": "Card levels",
+          "desc": "With the cards layout: how many levels from the root are laid out as cards before the packed treemap takes over. 0 = cards all the way down."
         },
         {
           "id": "layout.keep_chains",

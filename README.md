@@ -90,6 +90,7 @@ Every control has one home ([docs/PLAN.md](docs/PLAN.md), "UI map").
 | Viewport header | breadcrumb (click a segment to select it, › to list what is inside) · Camera menu · ☰ display toggles |
 | Legend (bottom right) | what colors and arcs mean; click an area to frame it |
 | Right pane | **Inspector** (with clickable imports / callers) · **View** (lenses, importance, relations) |
+| ☰ display menu | what the viewport draws: labels, code text, line numbers, hover, search hits, legend, grid, minimap, folder headers, **focus the selection** (dim everything outside it) and **fill functions** (function bodies as filled blocks — with the code text off, a map of functions rather than files) |
 | Status bar | server, index progress, hover, keymap hints, fps |
 
 ### Importance rules
@@ -108,6 +109,7 @@ Every lens is optional; the defaults show the plain map.
 |---|---|
 | **height** | 3D building height: *Nesting* (terraces), *Flat*, or a metric: lines, complexity, functions, churn, recent change, authors. **Terrace step** says whether a level's height scales with the box (a big folder gets a tall terrace) or is the same everywhere, so height reads as depth alone |
 | **nest folder chains** | a folder holding only one folder is one box (`cmd/scrap`) unless this is on, which draws every level; it re-indexes the repository |
+| **card levels** | with the cards layout: how many levels from the root are cards before the packed treemap takes over (0 = all the way down) |
 | **layout** | how a folder's contents are packed: *squarified* (squarest boxes), *strip* (reading order), *rows* / *columns* (one band per item, alternating direction with depth), *cards* (a grid of equal cards with air — size stops carrying weight, so a folder becomes countable) |
 | **color** | *Area* hue, *Cluster* (files grouped by imports, calls and git co-change rather than folders; hubs most of the code imports shown apart), or the same metrics as a blue → red percentile ramp |
 | **importance** | shrink vendored, test, generated, asset and data files so the core code gets the space |
