@@ -21,10 +21,13 @@ type View struct {
 	// the last matching rule wins (repo rules come after the user's).
 	Rules []Rule `json:"rules,omitempty"`
 
-	// Order places siblings: OrderSize (largest first, the default),
-	// OrderName (alphabetical: lenses and edits move boxes least) or
-	// OrderKind (folders first, then files, each alphabetical).
+	// Order places siblings: OrderSize (largest first, the default) or
+	// OrderName (alphabetical: lenses and edits move boxes least).
+	// OrderKind is the old name for OrderName with DirsFirst.
 	Order string `json:"order,omitempty"`
+	// DirsFirst groups folders ahead of loose files, whatever the order
+	// inside each group — a file manager's rule, on any sort column.
+	DirsFirst bool `json:"dirsFirst,omitempty"`
 	// Algorithm is LayoutSquarified (the default: squarest boxes) or
 	// LayoutStrip (rows in reading order: left to right, top to bottom).
 	Algorithm string `json:"algorithm,omitempty"`
@@ -220,6 +223,10 @@ func (m *Map) reweigh() {
 	if m.sortByName && order == "" {
 		order = OrderName
 	}
+	dirsFirst := m.View.DirsFirst
+	if order == OrderKind { // what "kind" meant before DirsFirst
+		order, dirsFirst = OrderName, true
+	}
 	for i := range m.Nodes {
 		n := &m.Nodes[i]
 		if n.Kind != KindDir {
@@ -227,13 +234,12 @@ func (m *Map) reweigh() {
 		}
 		slices.SortStableFunc(n.Children, func(a, b int32) int {
 			na, nb := &m.Nodes[a], &m.Nodes[b]
-			switch order {
-			case OrderName:
-			case OrderKind:
+			if dirsFirst { // KindDir sorts before KindFile
 				if c := cmp.Compare(na.Kind, nb.Kind); c != 0 {
 					return c
 				}
-			default:
+			}
+			if order != OrderName {
 				if c := cmp.Compare(nb.Weight, na.Weight); c != 0 {
 					return c
 				}

@@ -188,6 +188,7 @@ func (s *Server) SetGitSince(since string) {
 // lens pickers.
 type Look struct {
 	Order       string `json:"order"`
+	DirsFirst   bool   `json:"dirsFirst"`
 	Algorithm   string `json:"algorithm"`
 	Palette     string `json:"palette"`
 	LineNumbers bool   `json:"lineNumbers"`
@@ -206,8 +207,9 @@ func (s *Server) SetLook(l Look) {
 	v := &s.view
 	changed := l.Order != v.Order || l.Algorithm != v.Algorithm || l.Palette != v.Palette ||
 		l.LineNumbers != v.LineNumbers || l.Headers != v.Headers || l.EvenSteps != v.EvenSteps ||
-		l.CardDepth != v.CardDepth || l.MergeHeaders != v.MergeHeaders || l.BandSize != v.BandSize
-	v.Order, v.Algorithm, v.Palette = l.Order, l.Algorithm, l.Palette
+		l.CardDepth != v.CardDepth || l.MergeHeaders != v.MergeHeaders || l.BandSize != v.BandSize ||
+		l.DirsFirst != v.DirsFirst
+	v.Order, v.Algorithm, v.Palette, v.DirsFirst = l.Order, l.Algorithm, l.Palette, l.DirsFirst
 	v.LineNumbers, v.Headers, v.EvenSteps, v.CardDepth = l.LineNumbers, l.Headers, l.EvenSteps, l.CardDepth
 	v.MergeHeaders, v.BandSize = l.MergeHeaders, l.BandSize
 	s.mu.Unlock()
@@ -298,6 +300,7 @@ func (s *Server) SetView(v codemap.View) {
 	}
 	// settings, not lens pickers
 	v.Order, v.Algorithm, v.Palette, v.LineNumbers = s.view.Order, s.view.Algorithm, s.view.Palette, s.view.LineNumbers
+	v.DirsFirst = s.view.DirsFirst
 	s.view = v
 	s.mu.Unlock()
 	s.rebuild()

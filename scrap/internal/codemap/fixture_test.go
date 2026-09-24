@@ -343,16 +343,27 @@ func TestFileCache(t *testing.T) {
 
 func TestLayoutOrders(t *testing.T) {
 	m := fixture(t, false)
-	for _, v := range []View{{Order: OrderKind}, {Order: OrderName, Algorithm: LayoutStrip}, {Algorithm: LayoutStrip}} {
+	// DirsFirst composes with either order; OrderKind is the old spelling
+	// of name + folders first and must still mean that.
+	for _, v := range []View{{Order: OrderKind}, {Order: OrderName, DirsFirst: true},
+		{Order: OrderSize, DirsFirst: true}, {Order: OrderName, Algorithm: LayoutStrip}, {Algorithm: LayoutStrip}} {
 		nm := m.WithView(v)
 		root := &nm.Nodes[0]
-		if v.Order == OrderKind {
+		if v.Order == OrderKind || v.DirsFirst {
 			seenFile := false
 			for _, c := range root.Children {
 				if nm.Nodes[c].Kind == KindFile {
 					seenFile = true
 				} else if seenFile {
 					t.Errorf("folders first: %s after a file", nm.Nodes[c].Name)
+				}
+			}
+		}
+		if v.Order == OrderName && !v.DirsFirst && v.Algorithm == "" {
+			for i := 1; i < len(root.Children); i++ {
+				a, b := nm.Nodes[root.Children[i-1]].Name, nm.Nodes[root.Children[i]].Name
+				if strings.ToLower(a) > strings.ToLower(b) {
+					t.Errorf("plain alphabetical: %s before %s", a, b)
 				}
 			}
 		}

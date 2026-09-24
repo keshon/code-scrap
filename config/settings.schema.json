@@ -1007,13 +1007,21 @@
           "type": "enum",
           "options": [
             "size",
-            "name",
-            "kind"
+            "name"
           ],
           "default": "size",
           "scope": "server",
           "label": "Order",
-          "desc": "How siblings are placed: size = biggest first · name = alphabetical (boxes move least when lenses or files change) · kind = folders first, then files, each alphabetical."
+          "desc": "How siblings are placed: size = biggest first · name = alphabetical (boxes move least when lenses or files change)."
+        },
+        {
+          "id": "layout.dirs_first",
+          "surface": "view",
+          "type": "bool",
+          "default": false,
+          "scope": "server",
+          "label": "Folders first",
+          "desc": "Folders are placed ahead of loose files, sorted inside each group by the order above: on = a file manager on Windows, off = plain alphabetical, the way macOS lists a folder."
         },
         {
           "id": "layout.cards_depth",

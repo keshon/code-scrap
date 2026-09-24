@@ -113,6 +113,7 @@ Every lens is optional; the defaults show the plain map.
 | **merge folder bands** | a folder that fills its parent shares its band (`docs / reference`) instead of stacking one; off gives every folder its own |
 | **band height** | how tall a folder's band is, as a share of the folder it sits in |
 | **card levels** | with the cards layout: how many levels from the root are cards before the packed treemap takes over (0 = all the way down) |
+| **order** | where siblings land inside a folder: *size* (biggest first) or *name* (alphabetical, so boxes barely move when a lens or a file changes). **Folders first** groups the folders ahead of the loose files on top of either one, the way Windows lists a folder; off is plain alphabetical, the way macOS does |
 | **layout** | how a folder's contents are packed: *squarified* (squarest boxes), *strip* (reading order), *rows* / *columns* (one band per item, alternating direction with depth), *cards* (a grid of equal cards with air — size stops carrying weight, so a folder becomes countable) |
 | **color** | *Area* hue, *Cluster* (files grouped by imports, calls and git co-change rather than folders; hubs most of the code imports shown apart), or the same metrics as a blue → red percentile ramp |
 | **importance** | shrink vendored, test, generated, asset and data files so the core code gets the space |
