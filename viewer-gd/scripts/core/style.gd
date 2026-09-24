@@ -273,6 +273,9 @@ func _build() -> Theme:
 	var text3 := color("text3")
 	var accent := color("accent")
 	var ctl := Vector4(12, (h - size * 1.4) * 0.5, 12, (h - size * 1.4) * 0.5)
+	# the small scale (viewport islands, legend, status bar) has its own
+	# radius: a corner cut for a 30 px panel looks gouged on a 20 px chip
+	var rs := rc * 0.55
 
 	th.default_font = font("ui", 400)
 	th.default_font_size = size
@@ -293,7 +296,7 @@ func _build() -> Theme:
 	# panels
 	th.set_stylebox("panel", "Panel", _sb(s1, r, Vector4(pad, pad, pad, pad), border, bw, shadow))
 	th.set_stylebox("panel", "PanelContainer", _sb(s1, r, Vector4(pad, pad, pad, pad), border, bw, shadow))
-	for v in [["Bar", s1, r, Vector4(pad, 6, pad, 6), shadow], ["Card", s2, rc, Vector4(pad, 10, pad, 10), 0.0],
+	for v in [["Bar", s1, rs, Vector4(pad, 4, pad, 4), shadow], ["Card", s2, rc, Vector4(pad, 10, pad, 10), 0.0],
 			["Inset", s3, rc, Vector4(3, 3, 3, 3), 0.0],
 			# panels whose content scrolls: the scrollbar sits close to the edge
 			["Side", s1, r, Vector4(pad, pad, 4, 6), shadow]]:
@@ -305,7 +308,7 @@ func _build() -> Theme:
 	# islands over the map: slim, no outline (a bright edge competes with the
 	# boxes underneath), lifted off the map by a soft shadow instead
 	th.set_type_variation("Floating", "PanelContainer")
-	var fl := _sb(Color(s1, 0.92), rc, Vector4(10, 3, 10, 3), Color(0, 0, 0, 0), 0, max(shadow, 8.0))
+	var fl := _sb(Color(s1, 0.92), rs, Vector4(8, 6, 8, 6), Color(0, 0, 0, 0), 0, max(shadow, 8.0))
 	th.set_stylebox("panel", "Floating", fl)
 
 	# buttons
@@ -337,18 +340,18 @@ func _build() -> Theme:
 	# one step down, for the islands that float over the map: less padding,
 	# the small text size, so the bar can be slim without feeling cramped
 	var slimpad := maxf((h * 0.72 - small * 1.4) * 0.5, 1.0)
-	var slim := Vector4(8, slimpad, 8, slimpad)
+	var slim := Vector4(slimpad + 4.0, slimpad, slimpad + 4.0, slimpad)  # padding in proportion
 	th.set_type_variation("SlimButton", "Button")
 	th.set_stylebox("normal", "SlimButton", _empty(slim))
-	th.set_stylebox("hover", "SlimButton", _sb(s3, rc, slim))
-	th.set_stylebox("pressed", "SlimButton", _sb(raised, rc, slim))
-	th.set_stylebox("hover_pressed", "SlimButton", _sb(raised, rc, slim))
+	th.set_stylebox("hover", "SlimButton", _sb(s3, rs, slim))
+	th.set_stylebox("pressed", "SlimButton", _sb(raised, rs, slim))
+	th.set_stylebox("hover_pressed", "SlimButton", _sb(raised, rs, slim))
 	th.set_font_size("font_size", "SlimButton", small)
 	th.set_color("font_color", "SlimButton", text2)
 	th.set_color("font_hover_color", "SlimButton", text)
 	th.set_color("font_pressed_color", "SlimButton", text)
 	th.set_type_variation("FloatingSlim", "PanelContainer")
-	th.set_stylebox("panel", "FloatingSlim", _sb(Color(s1, 0.92), rc, Vector4(6, 2, 6, 2), Color(0, 0, 0, 0), 0, max(shadow, 8.0)))
+	th.set_stylebox("panel", "FloatingSlim", _sb(Color(s1, 0.92), rs, Vector4(6, 2, 6, 2), Color(0, 0, 0, 0), 0, max(shadow, 8.0)))
 	th.set_type_variation("SegmentButton", "Button")
 	var seg := Vector4(14, ctl.y - 3, 14, ctl.y - 3)
 	th.set_stylebox("normal", "SegmentButton", _empty(seg))

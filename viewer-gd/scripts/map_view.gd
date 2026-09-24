@@ -797,6 +797,10 @@ func _draw_labels() -> void:
 				if kind == 1:
 					c.size = max(fs - 1, 8)
 					c.plain = headers
+					# hang the name off the box's right edge: code lines end
+					# ragged there, so a label covers less of them
+					c.right = true
+					c.pos = Vector2(minf(r.end.x, size.x) - 4.0, c.pos.y)
 					# zoomed out, the folder's tab sits where the first file's
 					# name goes: then the name moves just below it (r is the
 					# file's header strip, 2% of its shorter side, so the box

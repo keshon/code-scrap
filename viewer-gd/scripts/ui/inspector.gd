@@ -63,59 +63,120 @@ func _render() -> void:
 	if n.is_empty():
 		text = "[color=%s]Click a box on the map to inspect it.[/color]" % dim
 		return
-	var t := "[font_size=%d][b]%s[/b][/font_size] [color=%s]· %s[/color]\n" % [int(Style.num("font", "size_title", 15)), _esc(n.name), dim, n.kind]
-	t += "[color=%s]%s[/color]\n" % [_hex("text2"), _esc(n.path)]
-	if n.kind != "dir":
-		t += "line %d\n" % int(n.line)
-	t += "%s source lines · %s bytes\n" % [Fmt.num(n.lines), Fmt.num(n.bytes)]
-	t += "%s children · %s descendants\n" % [Fmt.num(n.children), Fmt.num(n.descendants)]
-	if n.has("lang"):
-		t += "\n[color=%s]language[/color]  %s%s\n" % [dim, n.lang, "" if not n.get("precise", false) else "  (tree-sitter)"]
-	if n.has("classes") and n.classes != null and n.classes.size() > 0:
-		t += "[color=%s]class[/color]  %s\n" % [dim, ", ".join(n.classes)]
-	if n.has("scope"):
-		t += "[color=%s]scope[/color]  %s\n" % [dim, n.scope]
+	# identity first, then what it is joined to, then the numbers: the
+	# relations are why this panel exists, so they sit above the metrics
+	var t := "[font_size=%d][b]%s[/b][/font_size]  [color=%s]%s[/color]
+" % [
+		int(Style.num("font", "size_title", 15)), _esc(n.name), dim, n.get("scope", n.kind)]
+	t += "[color=%s]%s%s[/color]
+" % [_hex("text2"), _esc(n.path),
+		"" if n.kind == "dir" else ":%d" % int(n.line)]
+	t += "
+%s
+" % _facts(n, dim)
 	if n.has("cluster"):
 		t += _cluster(n.cluster, dim)
-	t += "\n"
+	targets = []
+	var rel := _relations(dim)
+	if rel != "":
+		t += "
+" + rel
+	var metrics := _metrics(n, dim)
+	if metrics != "":
+		t += "
+" + metrics
+	text = t
+
+
+## The one-line facts: size, and what kind of thing this is.
+func _facts(n: Dictionary, dim: String) -> String:
+	var bits := ["%s lines" % Fmt.num(n.lines)]
+	if n.kind == "dir":
+		bits.append("%s items" % Fmt.num(n.children))
+		bits.append("%s inside" % Fmt.num(n.descendants))
+	elif int(n.get("bytes", 0)) > 0:
+		bits.append("%s bytes" % Fmt.num(n.bytes))
+	if n.has("lang"):
+		bits.append(str(n.lang) + ("" if not n.get("precise", false) else " · tree-sitter"))
+	if n.has("classes") and n.classes != null and n.classes.size() > 0:
+		bits.append(", ".join(n.classes))
+	return "[color=%s]%s[/color]" % [_hex("text2"), " · ".join(bits)]
+
+
+## Imports and calls, with the hint about stepping only when there is
+## something to step through.
+func _relations(dim: String) -> String:
+	if _rel.is_empty():
+		return ""
+	# paths are shown from the folder we are standing in, so a neighbour
+	# reads as its bare name and only the distant ones carry a path
+	var base: String = str(_node.get("path", ""))
+	if _node.get("kind", "") != "dir":
+		base = base.get_base_dir()
+	var t := ""
+	if _rel.has("edges"):
+		t += "[b]Imports[/b]
+"
+		t += _list(_rel.edges, "out", "imports", "relations.imports_out", base)
+		t += _list(_rel.edges, "in", "importers", "relations.imports_in", base)
+	if _rel.has("calls"):
+		t += "
+[b]Calls[/b] [color=%s]syntax-level[/color]
+" % dim
+		t += _list(_rel.calls, "out", "calls", "relations.calls_out", base)
+		t += _list(_rel.calls, "in", "callers", "relations.calls_in", base)
+	if t == "":
+		return ""
+	if targets.is_empty():
+		return t
+	var of := (" of %s" % _esc(_anchor)) if _anchor != "" else ""
+	return t + "
+[color=%s][lb] and ] step through the list%s[/color]
+" % [dim, of]
+
+
+## Metrics last, as label/value pairs rather than sentences.
+func _metrics(n: Dictionary, dim: String) -> String:
+	var rows := []
 	if n.has("fileMetrics"):
 		var fm: Dictionary = n.fileMetrics
-		t += "[b]File metrics[/b]\n"
-		t += "functions  %d\nmax complexity  %d\n" % [int(fm.functions), int(fm.maxComplexity)]
+		rows.append(["functions", str(int(fm.functions))])
+		rows.append(["max complexity", str(int(fm.maxComplexity))])
 		if fm.has("commits"):
 			var last := "—"
 			if int(fm.lastChange) > 0:
 				last = Time.get_date_string_from_unix_time(int(fm.lastChange))
-			t += "commits  %d\nauthors  %d\nlast change  %s\n" % [int(fm.commits), int(fm.authors), last]
-		t += "\n"
+			rows.append(["commits", "%d by %d" % [int(fm.commits), int(fm.authors)]])
+			rows.append(["last change", last])
 	if n.has("metrics"):
 		var m: Dictionary = n.metrics
-		t += "[b]Function metrics[/b]\n"
-		t += "cyclomatic complexity  %d\nparameters  %d\nmax nesting  %d\nlength  %d lines\n" % [int(m.complexity), int(m.params), int(m.nesting), int(m.lines)]
-	else:
-		t += "[color=%s]No function metrics for this selection.[/color]\n" % dim
-	targets = []
-	if not _rel.is_empty():
-		var of := (" of [b]%s[/b]" % _esc(_anchor)) if _anchor != "" else ""
-		t += "\n[color=%s]Relations%s · [lb] and ] step through them[/color]\n" % [dim, of]
-	if _rel.has("edges"):
-		t += "\n[b]Imports[/b]\n"
-		t += _list(_rel.edges, "out", "imports", "relations.imports_out")
-		t += _list(_rel.edges, "in", "imported by", "relations.imports_in")
-	if _rel.has("calls"):
-		t += "\n[b]Calls[/b] [color=%s](syntax-level)[/color]\n" % dim
-		t += _list(_rel.calls, "out", "calls", "relations.calls_out")
-		t += _list(_rel.calls, "in", "called by", "relations.calls_in")
-	text = t
+		rows.append(["complexity", str(int(m.complexity))])
+		rows.append(["parameters", str(int(m.params))])
+		rows.append(["max nesting", str(int(m.nesting))])
+		rows.append(["length", "%d lines" % int(m.lines)])
+	if rows.is_empty():
+		return ""
+	var t := "[b]Metrics[/b]
+"
+	for r in rows:
+		t += "[color=%s]%s[/color]  %s
+" % [dim, r[0], r[1]]
+	return t
 
 
-## One direction of a relation reply as a counted, clickable list.
-func _list(r: Dictionary, dir: String, title: String, color_id: String) -> String:
+## One direction of a relation reply as a counted, clickable list. The name
+## leads and its path trails in a quieter colour, so a long list scans.
+func _list(r: Dictionary, dir: String, title: String, color_id: String, base := "") -> String:
 	var edges: Array = r[dir]
 	var total := int(r[dir + "Total"])
+	if total == 0:
+		return "[color=%s]● no %s[/color]
+" % [_hex("text3"), title]
 	var names: Dictionary = r.get("names", {})
-	var t := "[color=%s]● %s %d[/color]\n" % [_set_hex(color_id), title, total]
+	var t := "[color=%s]● %s %d[/color]
+" % [_set_hex(color_id), title, total]
 	var seen := {}
+	var last := ""   # a repeated path is left out: the row above carries it
 	for e in edges:
 		var other := int(e[1]) if dir == "out" else int(e[0])
 		if seen.has(other):
@@ -123,12 +184,44 @@ func _list(r: Dictionary, dir: String, title: String, color_id: String) -> Strin
 		if seen.size() >= LIST_MAX:
 			break
 		seen[other] = true
-		var mark := "›" if targets.size() == cursor else "  "
+		var mark := "›" if targets.size() == cursor else " "
 		targets.append(other)
-		t += " %s [url=%d]%s[/url]\n" % [mark, other, _esc(names.get(str(other), "#%d" % other))]
+		var whole: String = str(names.get(str(other), "#%d" % other))
+		var lead := whole
+		var trail := ""
+		var sep := whole.find(" · ")
+		if sep > 0:   # a function: its name, then the file it lives in
+			lead = whole.substr(0, sep)
+			trail = _near(whole.substr(sep + 3), base)
+		elif whole.contains("/"):   # a file or folder: its name, then the way there
+			var near := _near(whole, base)
+			lead = near.get_file()
+			trail = near.get_base_dir()
+		t += " %s [url=%d]%s[/url]" % [mark, other, _esc(lead)]
+		if trail != "" and trail != last:
+			t += "  [color=%s]%s[/color]" % [_hex("text3"), _esc(trail)]
+		last = trail
+		t += "
+"
 	if total > seen.size():
-		t += "   [color=%s]… %d more[/color]\n" % [_hex("text3"), total - seen.size()]
+		t += "   [color=%s]… %d more[/color]
+" % [_hex("text3"), total - seen.size()]
 	return t
+
+
+## A path as seen from base: the shared folders are dropped, so a file next
+## door is just its name.
+static func _near(path: String, base: String) -> String:
+	if path == "" or base == "":
+		return path
+	var a := base.split("/")
+	var b := path.split("/")
+	var i := 0
+	while i < a.size() and i < b.size() - 1 and a[i] == b[i]:
+		i += 1
+	if i == 0:
+		return path
+	return "/".join(Array(b).slice(i))
 
 
 ## A file's cluster (click frames its home folder), or the clusters a

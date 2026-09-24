@@ -20,7 +20,7 @@ var _collapsed := false
 
 func _ready() -> void:
 	theme_type_variation = "Floating"
-	custom_minimum_size = Vector2(220, 0)
+	custom_minimum_size = Vector2(200, 0)
 	_box = VBoxContainer.new()
 	_box.add_theme_constant_override("separation", 4)
 	add_child(_box)
@@ -64,9 +64,9 @@ func _rebuild() -> void:
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(t)
 	var fold := Button.new()
-	fold.theme_type_variation = "FlatButton"
+	fold.theme_type_variation = "SlimButton"
 	fold.focus_mode = Control.FOCUS_NONE
-	fold.icon = Style.icon("chevron")
+	fold.icon = Style.icon("chevron", Color(0, 0, 0, 0), 15)
 	fold.tooltip_text = "Show the legend" if _collapsed else "Collapse the legend"
 	fold.pressed.connect(func():
 		_collapsed = not _collapsed

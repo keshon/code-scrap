@@ -62,7 +62,14 @@ static func place_labels(cand: Array, budget: int) -> Array:
 		var r := Rect2()
 		var ok := false
 		for spot in [c.pos] + c.get("alts", []):
-			r = Rect2(spot - Vector2(sz.x * 0.5, 0) if c.get("center", false) else spot, sz)
+			# anchored left, centred, or hung off its right edge (file names
+			# sit over the ragged right end of the code, not over its start)
+			var at: Vector2 = spot
+			if c.get("center", false):
+				at = spot - Vector2(sz.x * 0.5, 0)
+			elif c.get("right", false):
+				at = spot - Vector2(sz.x, 0)
+			r = Rect2(at, sz)
 			ok = true
 			for p in rects:
 				if p.grow(gap).intersects(r):
