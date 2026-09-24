@@ -997,12 +997,15 @@
           "type": "enum",
           "options": [
             "squarified",
-            "strip"
+            "strip",
+            "rows",
+            "columns",
+            "cards"
           ],
           "default": "squarified",
           "scope": "server",
           "label": "Layout",
-          "desc": "squarified = the squarest boxes, but the order winds around the space · strip = rows in reading order (left to right, top to bottom), slightly longer boxes."
+          "desc": "How a folder's contents are packed. squarified = the squarest boxes, but the order winds around the space · strip = rows in reading order, slightly longer boxes · rows / columns = one band per item in plain reading order, the direction alternating with depth · cards = a grid of equal cards with air between them: size stops carrying weight, so a folder becomes countable instead of a mosaic."
         }
       ]
     },
