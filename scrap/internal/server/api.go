@@ -18,7 +18,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 14
+const Protocol = 15
 
 func hello(st *state) map[string]any {
 	m := st.m

@@ -1020,6 +1020,27 @@
           "desc": "With the cards layout: how many levels from the root are laid out as cards before the packed treemap takes over. 0 = cards all the way down."
         },
         {
+          "id": "look.merge_bands",
+          "surface": "view",
+          "type": "bool",
+          "default": true,
+          "scope": "server",
+          "label": "Merge folder bands",
+          "desc": "With folder headers: a folder that fills its parent shares its band (\"docs / reference\") instead of stacking one of its own. Turn it off to give every folder its own band — worth doing together with Nest folder chains."
+        },
+        {
+          "id": "look.band_size",
+          "surface": "view",
+          "type": "float",
+          "default": 0.04,
+          "min": 0.015,
+          "max": 0.09,
+          "step": 0.005,
+          "scope": "server",
+          "label": "Band height",
+          "desc": "How tall a folder's header band is, as a share of the folder it sits in. Every folder on one level gets the same band, and deeper levels get smaller ones."
+        },
+        {
           "id": "layout.keep_chains",
           "surface": "view",
           "type": "bool",

@@ -10,8 +10,7 @@ import (
 const (
 	padFrac       = 0.004 // inner padding
 	headerFrac    = 0.020 // label strip on top of dirs and files
-	dirHeaderFrac = 0.045 // folder header band (View.Headers) of the whole map…
-	dirHeaderMax  = 0.13  // …growing up to this for small folders
+	dirHeaderFrac = 0.04  // folder header band (View.Headers), of the parent
 	// A folder whose own band would sit right under its parent's and span
 	// nearly the same width shares that band instead ("a / b / c"), so
 	// chains of one dominant folder don't stack bands.
@@ -27,14 +26,26 @@ const (
 	WorldAspect = 0.625
 )
 
-// headerFrac is the header height of a box of kind k with shorter side s,
-// relative to s. Folder header bands take a bigger share of small folders,
-// so their names become readable a level earlier while zooming in.
-func (m *Map) headerFrac(k Kind, s float64) float64 {
-	if k == KindDir && m.View.Headers {
-		return min(dirHeaderFrac*math.Pow(WorldAspect/max(s, 1e-12), 0.25), dirHeaderMax)
+// headerH is a box's label strip in world units. A folder's band is
+// measured against its parent rather than against itself, so every folder
+// on one level gets the same band — bands of assorted heights read as
+// noise — and a deeper level gets a smaller one. It never takes more than
+// a quarter of the folder it belongs to.
+func (m *Map) headerH(id int32) float64 {
+	n := &m.Nodes[id]
+	own := n.Rect.Min()
+	if n.Kind != KindDir || !m.View.Headers {
+		return own * headerFrac
 	}
-	return headerFrac
+	scale := own
+	if n.Parent >= 0 {
+		scale = m.Nodes[n.Parent].Rect.Min()
+	}
+	frac := m.View.BandSize
+	if frac <= 0 {
+		frac = dirHeaderFrac
+	}
+	return min(scale*frac, own*0.12)
 }
 
 // Header returns the label strip of a dir or file node: the folder header
@@ -45,14 +56,13 @@ func (m *Map) Header(id int32) Rect {
 	if n.InHeader {
 		return Rect{}
 	}
-	s := n.Rect.Min()
 	if n.Kind == KindDir && m.View.Headers {
 		// the band is the folder's own top edge, not a label floating
 		// inside it: no gap between the band and the contour
-		return rect(n.Rect.X, n.Rect.Y, n.Rect.W, s*m.headerFrac(n.Kind, s))
+		return rect(n.Rect.X, n.Rect.Y, n.Rect.W, m.headerH(id))
 	}
-	p := s * padFrac
-	return rect(n.Rect.X+p, n.Rect.Y+p, n.Rect.W-2*p, s*m.headerFrac(n.Kind, s))
+	p := n.Rect.Min() * padFrac
+	return rect(n.Rect.X+p, n.Rect.Y+p, n.Rect.W-2*p, m.headerH(id))
 }
 
 // HeaderName is what a folder's header band says: its own name, plus the
@@ -71,14 +81,26 @@ func (m *Map) HeaderName(id int32) string {
 }
 
 // content returns the area below the header where children or text go.
-func (m *Map) content(r Rect, k Kind) Rect {
-	s := r.Min()
-	p := s * padFrac
-	h := s * m.headerFrac(k, s)
-	if k == KindDir && m.View.Headers {
+func (m *Map) content(r Rect, h float64, dir bool) Rect {
+	p := r.Min() * padFrac
+	if dir && m.View.Headers {
 		return rect(r.X+p, r.Y+h+p, r.W-2*p, max(r.H-h-2*p, 0)) // the band starts at the very top
 	}
 	return rect(r.X+p, r.Y+p+h, r.W-2*p, max(r.H-2*p-h, 0))
+}
+
+// withGap leaves a hairline of air around a box under folder headers, so
+// neighbours read as separate cards instead of one surface. The gap is a
+// share of the parent, capped by the box's own size so small boxes survive.
+func withGap(r, inner Rect, headers bool) Rect {
+	if !headers {
+		return r
+	}
+	d := min(inner.Min()*padFrac, r.Min()*0.06)
+	if d <= 0 {
+		return r
+	}
+	return rect(r.X+d, r.Y+d, max(r.W-2*d, 0), max(r.H-2*d, 0))
 }
 
 // mergesIntoHeader tells whether a child laid out at r starts at the top of
@@ -94,11 +116,10 @@ func mergesIntoHeader(r, inner Rect) bool {
 func (m *Map) contentOf(id int32) Rect {
 	n := &m.Nodes[id]
 	if n.InHeader {
-		s := n.Rect.Min()
-		p := s * padFrac
+		p := n.Rect.Min() * padFrac
 		return rect(n.Rect.X+p, n.Rect.Y+p, n.Rect.W-2*p, max(n.Rect.H-2*p, 0))
 	}
-	return m.content(n.Rect, n.Kind)
+	return m.content(n.Rect, m.headerH(id), n.Kind == KindDir)
 }
 
 // Elevation steps, relative to a box's shorter side. Each box stands on its
@@ -210,14 +231,13 @@ func (m *Map) layoutNode(id int32) {
 		}
 		for i, c := range n.Children {
 			cn := &m.Nodes[c]
-			cn.Rect = rects[i]
-			// merging bands hides a level, which is the opposite of what
-			// KeepChains asks for
-			cn.InHeader = m.View.Headers && !m.KeepChains && cn.Kind == KindDir && mergesIntoHeader(rects[i], inner)
+			cn.Rect = withGap(rects[i], inner, m.View.Headers)
+			cn.InHeader = m.View.Headers && m.View.MergeHeaders && cn.Kind == KindDir &&
+				mergesIntoHeader(cn.Rect, inner)
 			m.layoutNode(c)
 		}
 	case KindFile:
-		m.layoutText(&m.Files[n.File], m.content(n.Rect, KindFile))
+		m.layoutText(&m.Files[n.File], m.content(n.Rect, m.headerH(id), false))
 		f := &m.Files[n.File]
 		for _, sid := range f.Scopes {
 			s := &m.Nodes[sid]

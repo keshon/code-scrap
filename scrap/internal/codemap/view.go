@@ -39,6 +39,13 @@ type View struct {
 	// level): cards where a folder should be countable, packed treemap
 	// deeper down where proportions matter.
 	CardDepth int `json:"cardDepth,omitempty"`
+	// BandSize is the folder band's height as a share of the parent box
+	// (0 = the default). Bigger reads from further away, smaller leaves
+	// more room for the code.
+	BandSize float64 `json:"bandSize,omitempty"`
+	// MergeHeaders lets a folder that fills its parent share its band
+	// ("a / b / c") instead of stacking one of its own.
+	MergeHeaders bool `json:"mergeHeaders,omitempty"`
 	// EvenSteps makes every terrace and building the same height instead
 	// of scaling the step with the box, so height reads as depth alone.
 	EvenSteps bool `json:"evenSteps,omitempty"`

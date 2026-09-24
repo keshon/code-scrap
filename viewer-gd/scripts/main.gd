@@ -454,7 +454,9 @@ func _send_server_settings() -> void:
 			"palette": Settings.get_value("look.palette"), "lineNumbers": Settings.get_value("text.line_numbers"),
 			"headers": Settings.get_value("look.headers"),
 			"evenSteps": Settings.get_value("look.even_steps") == "even",
-			"cardDepth": int(Settings.get_value("layout.cards_depth"))}})
+			"cardDepth": int(Settings.get_value("layout.cards_depth")),
+			"mergeHeaders": Settings.get_value("look.merge_bands"),
+			"bandSize": Settings.get_value("look.band_size")}})
 
 
 func _on_setting_changed(id: String, _v: Variant) -> void:
