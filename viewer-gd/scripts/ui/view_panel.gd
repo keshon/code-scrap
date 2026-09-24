@@ -10,8 +10,8 @@ signal lens_changed(view: Dictionary)   # {height, color, importance}
 var _height_opt: OptionButton
 var _height_caption: Label
 var _color_opt: OptionButton
-var _height_desc: Label
-var _color_desc: Label
+var _height_info: Button
+var _color_info: Button
 var _importance: CheckButton
 var _weights: FoldableContainer
 var _heights := []    # lens descriptors
@@ -30,27 +30,23 @@ func _ready() -> void:
 
 	vb.add_child(_section("Lenses"))
 	_height_caption = _caption("Height")
-	vb.add_child(_height_caption)
+	_height_info = _info("")
+	vb.add_child(_captioned(_height_caption, _height_info))
 	_height_opt = _picker()
 	_height_opt.item_selected.connect(func(_i): _emit())
 	vb.add_child(_height_opt)
-	_height_desc = _desc()
-	vb.add_child(_height_desc)
-	vb.add_child(_caption("Color"))
+	_color_info = _info("")
+	vb.add_child(_captioned(_caption("Color"), _color_info))
 	_color_opt = _picker()
 	_color_opt.item_selected.connect(func(_i): _emit())
 	vb.add_child(_color_opt)
-	_color_desc = _desc()
-	vb.add_child(_color_desc)
 
 	_importance = CheckButton.new()
 	_importance.text = "Importance weighting"
 	_importance.focus_mode = Control.FOCUS_NONE
+	_importance.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_importance.toggled.connect(func(_on): _emit())
-	vb.add_child(_importance)
-	var idesc := _desc()
-	idesc.text = "Shrinks vendored, test, generated, asset and data files so the core code gets the space. The weights say how much area each kind keeps."
-	vb.add_child(idesc)
+	vb.add_child(_captioned(_importance, _info("Shrinks vendored, test, generated, asset and data files so the core code gets the space. The weights say how much area each kind keeps.")))
 	_weights = FoldableContainer.new()
 	_weights.title = Style.text("Weights")
 	_weights.folded = true
@@ -61,24 +57,14 @@ func _ready() -> void:
 	vb.add_child(_weights)
 	vb.add_child(SettingRow.new("git.since", true))
 	vb.add_child(HSeparator.new())
-	vb.add_child(_section("Layout"))
-	var ldesc := _desc()
-	ldesc.text = "How boxes are arranged inside each folder."
-	vb.add_child(ldesc)
-	for id in ["layout.order", "layout.algorithm"]:
-		var row := SettingRow.new(id, true)
-		vb.add_child(row)
-		var d := _desc()
-		d.text = Settings.defs[id].desc
-		vb.add_child(d)
+	vb.add_child(_captioned(_section("Layout"), _info("How boxes are arranged inside each folder. Hover a setting's name for what it does.")))
+	for id in ["layout.keep_chains", "layout.order", "layout.algorithm"]:
+		vb.add_child(_captioned(SettingRow.new(id, true), _info(Settings.defs[id].desc)))
 
 	vb.add_child(HSeparator.new())
-	vb.add_child(_section("Relations"))
-	var rdesc := _desc()
-	rdesc.text = "Arcs from and to the selection. Colors and opacity: Settings → Relations."
-	vb.add_child(rdesc)
-	for id in ["relations.imports", "relations.calls"]:
-		vb.add_child(SettingRow.new(id, true))
+	vb.add_child(_captioned(_section("Relations"), _info("Arcs from and to the selection. Colors and opacity: Settings → Relations.")))
+	for id in ["relations.imports", "relations.calls", "relations.style"]:
+		vb.add_child(_captioned(SettingRow.new(id, true), _info(Settings.defs[id].desc)))
 
 	_set_lenses(_fallback_heights(), _fallback_colors())
 
@@ -101,7 +87,7 @@ func sync(info: Dictionary) -> void:
 ## Height only shapes the 3D city: grayed out on the flat map.
 func set_3d(on: bool) -> void:
 	_height_opt.disabled = not on
-	_height_desc.modulate.a = 1.0 if on else 0.5
+	_height_info.modulate.a = 1.0 if on else 0.5
 	_height_caption.text = Style.text("Height") if on else Style.text("Height · 3D only")
 	_height_opt.tooltip_text = "" if on else "Building height applies to the 3D city (Tab)"
 
@@ -148,10 +134,10 @@ func _emit() -> void:
 func _describe() -> void:
 	var h: Dictionary = _heights[max(_height_opt.selected, 0)]
 	var c: Dictionary = _colors[max(_color_opt.selected, 0)]
-	_height_desc.text = h.get("desc", "")
-	_color_desc.text = c.get("desc", "")
+	_height_info.tooltip_text = h.get("desc", "")
+	_color_info.tooltip_text = c.get("desc", "")
 	if c.get("high", "") != "":
-		_color_desc.text += " Red = " + c.high + "."
+		_color_info.tooltip_text += " Red = " + c.high + "."
 
 
 func _set_lenses(heights: Array, colors: Array) -> void:
@@ -198,12 +184,25 @@ func _caption(t: String) -> Label:
 	return l
 
 
-func _desc() -> Label:
-	var l := Label.new()
-	l.theme_type_variation = "SmallLabel"
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size = Vector2(160, 0)
-	return l
+## A row with its explanation folded into an "i" you can hover: the panel
+## stays short enough to see at once instead of a wall of prose.
+func _captioned(main: Control, info: Button) -> HBoxContainer:
+	var hb := HBoxContainer.new()
+	main.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hb.add_child(main)
+	hb.add_child(info)
+	return hb
+
+
+func _info(text: String) -> Button:
+	var b := Button.new()
+	b.theme_type_variation = "FlatButton"
+	b.focus_mode = Control.FOCUS_NONE
+	b.icon = Style.icon("info")
+	b.tooltip_text = text
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.mouse_default_cursor_shape = Control.CURSOR_HELP
+	return b
 
 
 # Until the first hello (an older server) the panel still works.

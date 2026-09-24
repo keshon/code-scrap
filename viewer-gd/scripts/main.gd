@@ -157,6 +157,7 @@ func _build_ui() -> void:
 
 	# viewport overlays; the map's tile levels use z up to 1000
 	header = ViewportHeader.new(client)
+	header.resized.connect(_sync_top_inset)
 	header.z_index = 2000
 	header.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	header.offset_left = 10
@@ -249,9 +250,15 @@ func _apply_theme() -> void:
 
 
 ## Zone visibility from settings.
+## The header floats over the map, so framing has to keep clear of it.
+func _sync_top_inset() -> void:
+	map.top_inset = (header.size.y + 10.0) if header.visible else 0.0
+
+
 func _apply_layout() -> void:
 	explorer.visible = Settings.get_value("ui.explorer")
 	header.visible = Settings.get_value("viewport.header")
+	_sync_top_inset()
 
 
 # ---------------------------------------------------------------- views

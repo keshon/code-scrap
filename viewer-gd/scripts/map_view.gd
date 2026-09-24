@@ -73,6 +73,9 @@ var selection_id := -1
 ## so an arc aims at the whole box instead.
 const LINE_ANCHOR_PX := 2.5
 
+## Screen space the viewport header covers: framing keeps clear of it.
+var top_inset := 0.0
+
 var hit_files := []                # Array of world rects [x,y,w,h]
 var hit_lines := []                # Array of world rects
 var current_hit := []              # world rect of the focused hit
@@ -197,9 +200,12 @@ func max_zoom() -> float:
 	return TILE_PX * pow(2.0, max_z + 0.5)
 
 
+## The camera target that shows rect r whole, centred in the space the
+## header leaves free rather than under it.
 func fit_rect(r: Array, margin := 1.12) -> Array:
-	var z: float = min(size.x / (r[2] * margin), size.y / (r[3] * margin))
-	return [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5, clamp(z, min_zoom(), max_zoom())]
+	var free := maxf(size.y - top_inset, 40.0)
+	var z: float = clamp(min(size.x / (r[2] * margin), free / (r[3] * margin)), min_zoom(), max_zoom())
+	return [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5 - top_inset * 0.5 / z, z]
 
 
 func home(animate := true) -> void:
@@ -660,7 +666,7 @@ func _focus_hovered() -> void:
 ## shown at about `line_px` pixels.
 func focus_line(r: Array, line_px := 16.0) -> void:
 	var z: float = clamp(line_px / max(r[3], 1e-12), min_zoom(), max_zoom())
-	fly_to(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5, z)
+	fly_to(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5 - top_inset * 0.5 / z, z)
 
 
 # ---------------------------------------------------------------- overlay

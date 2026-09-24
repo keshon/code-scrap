@@ -13,6 +13,7 @@ extends Node
 ##   --lens=height:churn,color:complexity,importance   apply lenses once git is loaded
 ##   --rel=imports,calls   turn relation arcs on (use with --search to select)
 ##   --settings=1      open the settings panel
+##   --tab=view        show the right pane's View tab
 ##   --hud=1           show the diagnostics overlay
 ##   --theme=<id>      use this theme for the run (nothing is saved)
 ##   --set=id:value,…  override settings for the run (nothing is saved)
@@ -101,6 +102,8 @@ func _ready() -> void:
 	if args.has("rel"):
 		Settings.set_value("relations.imports", "imports" in args.rel)
 		Settings.set_value("relations.calls", "calls" in args.rel)
+	if args.get("tab", "") == "view":
+		get_tree().create_timer(0.5).timeout.connect(func(): shell._tabs.current_tab = 1)
 	if args.has("settings"):
 		shell.settings_panel.show()
 	if args.has("hud"):

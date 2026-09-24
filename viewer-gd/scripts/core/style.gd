@@ -232,6 +232,7 @@ const ICONS := {
 	"save": '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
 	"close": '<path d="M6 6l12 12M18 6L6 18"/>',
 	"reset": '<path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4.5h4.5"/>',
+	"info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6v.1"/>',
 	"frame": '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/>',
 }
 
@@ -300,10 +301,10 @@ func _build() -> Theme:
 	# the viewport frame (a Panel: overlays inside are placed by anchors)
 	th.set_type_variation("ViewportFrame", "Panel")
 	th.set_stylebox("panel", "ViewportFrame", _sb(color("bg"), r, Vector4(0, 0, 0, 0)))
-	# islands over the map: no drop shadow (it reads as smudge on a busy map),
-	# a hairline edge instead
+	# islands over the map: slim, no outline (a bright edge competes with the
+	# boxes underneath), lifted off the map by a soft shadow instead
 	th.set_type_variation("Floating", "PanelContainer")
-	var fl := _sb(Color(s1, 0.9), rc, Vector4(10, 6, 10, 6), border if bw > 0 else Color(text, 0.08), max(bw, 1))
+	var fl := _sb(Color(s1, 0.92), rc, Vector4(10, 3, 10, 3), Color(0, 0, 0, 0), 0, max(shadow, 8.0))
 	th.set_stylebox("panel", "Floating", fl)
 
 	# buttons

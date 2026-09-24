@@ -14,6 +14,7 @@ const CAMERA := [["Frame all", "frame_all", "A"], ["Frame selected", "frame_sele
 	["Deselect", "deselect", "Q"], ["Select parent", "select_parent", "Backspace"], ["", "", ""],
 	["Switch 2D / 3D", "toggle_view", "Tab"]]
 const MAX_CRUMBS := 3
+const ISLAND_H := 30.0   # the islands sit over the map: keep them slim
 const MENU_MAX := 80
 
 var client: ScrapClient
@@ -193,4 +194,5 @@ func _sync_display() -> void:
 func _island() -> PanelContainer:
 	var p := PanelContainer.new()
 	p.theme_type_variation = "Floating"
+	p.custom_minimum_size = Vector2(0, ISLAND_H)
 	return p
