@@ -14,7 +14,10 @@ const CAMERA := [["Frame all", "frame_all", "A"], ["Frame selected", "frame_sele
 	["Deselect", "deselect", "Q"], ["Select parent", "select_parent", "Backspace"], ["", "", ""],
 	["Switch 2D / 3D", "toggle_view", "Tab"]]
 const MAX_CRUMBS := 3
-const ISLAND_H := 30.0   # the islands sit over the map: keep them slim
+const ISLAND_H := 26.0   # the islands sit over the map: keep them slim
+const ICON_PX := 15      # …and their icons one step down from the panels
+const CTRL_H := 20.0     # every control in them is this tall, so the three
+                         # islands line up whatever they hold
 const MENU_MAX := 80
 
 var client: ScrapClient
@@ -45,6 +48,8 @@ func _ready() -> void:
 	_clip = ScrollContainer.new()
 	_clip.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	_clip.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_clip.custom_minimum_size = Vector2(0, CTRL_H)
+	_clip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	crumb_island.add_child(_clip)
 	_crumbs = HBoxContainer.new()
 	_crumbs.add_theme_constant_override("separation", 0)
@@ -55,7 +60,9 @@ func _ready() -> void:
 	var cam_island := _island()
 	add_child(cam_island)
 	_camera = MenuButton.new()
-	_camera.icon = Style.icon("camera")
+	_camera.icon = Style.icon("camera", Color(0, 0, 0, 0), ICON_PX)
+	_camera.theme_type_variation = "SlimButton"
+	_slim(_camera)
 	_camera.flat = true
 	_camera.focus_mode = Control.FOCUS_NONE
 	_camera.tooltip_text = "Camera commands"
@@ -76,7 +83,9 @@ func _ready() -> void:
 	var disp_island := _island()
 	add_child(disp_island)
 	_display = MenuButton.new()
-	_display.icon = Style.icon("eye")
+	_display.icon = Style.icon("eye", Color(0, 0, 0, 0), ICON_PX)
+	_display.theme_type_variation = "SlimButton"
+	_slim(_display)
 	_display.flat = true
 	_display.focus_mode = Control.FOCUS_NONE
 	_display.tooltip_text = "What the viewport shows"
@@ -103,8 +112,8 @@ func _ready() -> void:
 	add_child(_menu)
 	client.reply.connect(_on_reply)
 	Style.theme_changed.connect(func():
-		_display.icon = Style.icon("eye")
-		_camera.icon = Style.icon("camera"))
+		_display.icon = Style.icon("eye", Color(0, 0, 0, 0), ICON_PX)
+		_camera.icon = Style.icon("camera", Color(0, 0, 0, 0), ICON_PX))
 	set_path("", -1, [])
 
 
@@ -140,19 +149,21 @@ func set_path(name: String, id: int, ancestors: Array) -> void:
 		var nid := int(a[0])
 		var last := i == shown.size() - 1
 		var b := Button.new()
-		b.theme_type_variation = "FlatButton"
+		b.theme_type_variation = "SlimButton"
 		b.text = str(a[1])
 		b.tooltip_text = "Select and frame " + str(a[1])
 		b.focus_mode = Control.FOCUS_NONE
 		if last and id >= 0:
 			b.add_theme_font_override("font", Style.font("ui", 600))
+		_slim(b)
 		b.pressed.connect(func(): crumb_clicked.emit(nid))
 		_crumbs.add_child(b)
 		var chev := Button.new()
-		chev.theme_type_variation = "FlatButton"
-		chev.icon = Style.icon("chevron")
+		chev.theme_type_variation = "SlimButton"
+		chev.icon = Style.icon("chevron", Color(0, 0, 0, 0), ICON_PX)
 		chev.tooltip_text = "What is inside " + str(a[1])
 		chev.focus_mode = Control.FOCUS_NONE
+		_slim(chev)
 		chev.pressed.connect(func(): _open_menu(nid, chev))
 		_crumbs.add_child(chev)
 
@@ -193,6 +204,14 @@ func _sync_display() -> void:
 
 func _island() -> PanelContainer:
 	var p := PanelContainer.new()
-	p.theme_type_variation = "Floating"
+	p.theme_type_variation = "FloatingSlim"
 	p.custom_minimum_size = Vector2(0, ISLAND_H)
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return p
+
+
+## One height for everything in the islands, centred in its island: with
+## mixed heights the three islands stop lining up.
+func _slim(c: Control) -> void:
+	c.custom_minimum_size = Vector2(c.custom_minimum_size.x, CTRL_H)
+	c.size_flags_vertical = Control.SIZE_SHRINK_CENTER

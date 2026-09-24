@@ -238,9 +238,9 @@ const ICONS := {
 
 
 ## A stroked 18 px UI icon in the theme's secondary text color (or color).
-func icon(name: String, tint := Color(0, 0, 0, 0)) -> DPITexture:
+func icon(name: String, tint := Color(0, 0, 0, 0), px := 18) -> DPITexture:
 	var c := tint if tint.a > 0.0 else color("text2")
-	return _svg('<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="%s" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">%s</svg>' % [_hex(c), ICONS.get(name, "")])
+	return _svg('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 24 24" fill="none" stroke="%s" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">%s</svg>' % [px, px, _hex(c), ICONS.get(name, "")])
 
 
 func _svg(src: String) -> DPITexture:
@@ -333,6 +333,21 @@ func _build() -> Theme:
 	th.set_stylebox("hover", "FlatButton", _sb(s3, rc, ctl))
 	th.set_stylebox("pressed", "FlatButton", _sb(raised, rc, ctl))
 	th.set_stylebox("hover_pressed", "FlatButton", _sb(raised, rc, ctl))
+	# one step down, for the islands that float over the map: less padding,
+	# the small text size, so the bar can be slim without feeling cramped
+	var slimpad := maxf((h * 0.72 - small * 1.4) * 0.5, 1.0)
+	var slim := Vector4(8, slimpad, 8, slimpad)
+	th.set_type_variation("SlimButton", "Button")
+	th.set_stylebox("normal", "SlimButton", _empty(slim))
+	th.set_stylebox("hover", "SlimButton", _sb(s3, rc, slim))
+	th.set_stylebox("pressed", "SlimButton", _sb(raised, rc, slim))
+	th.set_stylebox("hover_pressed", "SlimButton", _sb(raised, rc, slim))
+	th.set_font_size("font_size", "SlimButton", small)
+	th.set_color("font_color", "SlimButton", text2)
+	th.set_color("font_hover_color", "SlimButton", text)
+	th.set_color("font_pressed_color", "SlimButton", text)
+	th.set_type_variation("FloatingSlim", "PanelContainer")
+	th.set_stylebox("panel", "FloatingSlim", _sb(Color(s1, 0.92), rc, Vector4(6, 2, 6, 2), Color(0, 0, 0, 0), 0, max(shadow, 8.0)))
 	th.set_type_variation("SegmentButton", "Button")
 	var seg := Vector4(14, ctl.y - 3, 14, ctl.y - 3)
 	th.set_stylebox("normal", "SegmentButton", _empty(seg))
