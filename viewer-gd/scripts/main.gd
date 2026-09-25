@@ -67,6 +67,7 @@ var _shown_node := -1        # node the inspector shows
 var _rel_reqs := {}          # request id -> op
 var _rel := {}               # op -> reply
 var _node_req := -1
+var _outline_req := -1       # children of the selection, for the Inspector outline
 var _pending := {}           # what to do with the next node reply: {parent, select, fly}
 var _last_root := ""
 var _tree_sig := ""          # root + index pass: when it changes, node ids did
@@ -655,6 +656,9 @@ func _on_reply(id: int, data: Dictionary) -> void:
 			if _rel_reqs.get(id, "") == data.op:
 				_rel[data.op] = data
 				_push_arcs()
+		"children":
+			if id == _outline_req:
+				inspector.set_outline(int(data.node), data.items)
 
 
 ## True when the selection is on screen in the flat map, so a rebuild that
@@ -692,6 +696,8 @@ func _on_node(data: Dictionary) -> void:
 		var f := map.fit_rect(data.rect)
 		map.fly_to(f[0], f[1], f[2])
 	inspector.show_node(data)
+	# what is inside it: a file's functions, a folder's contents
+	_outline_req = client.request("children", {"node": nid})
 	var anc: Array = data.get("ancestors", [])
 	header.set_path(String(data.name), nid, anc)
 	explorer.reveal(anc.map(func(a): return int(a[0])) + [nid])

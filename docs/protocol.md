@@ -11,6 +11,7 @@ History:
 
 | Version | Change |
 |---|---|
+| 17 | A `children` item for a scope carries `line`, `scope` and `complexity`: the Inspector lists what is inside a file the way an editor outline does, and every row is an address you can click. |
 | 16 | `options.look.dirsFirst`: folders are placed ahead of loose files whatever the order inside each group. It replaces `order: "kind"` (still accepted, and read as name + folders first), so the rule now composes with the size order too. |
 | 15 | `options.look.mergeHeaders` and `look.bandSize`: whether a folder that fills its parent shares its band, and how tall a band is (a share of the parent, so one level's bands match). Under folder headers a box also keeps a hairline of air from its neighbours. |
 | 14 | Tile labels carry `u32 lines`, the source lines in the box (layouts with room, like cards, print it). `options.look.cardDepth` limits the cards layout to the levels near the root. |

@@ -18,7 +18,7 @@ func rect(r codemap.Rect) [4]float64 { return [4]float64{r.X, r.Y, r.W, r.H} }
 
 // Protocol is the wire protocol version (docs/protocol.md). Bump it on any
 // incompatible change to a message or binary frame.
-const Protocol = 16
+const Protocol = 17
 
 func hello(st *state) map[string]any {
 	m := st.m
@@ -436,16 +436,24 @@ func overview(st *state) map[string]any {
 	return map[string]any{"op": "overview", "world": rect(m.World), "boxes": boxes}
 }
 
-// children lists a node's children for tree views and breadcrumb menus.
+// children lists a node's children for tree views, breadcrumb menus and the
+// Inspector's outline. A scope also carries where it starts and what it is,
+// which is what makes the outline read like an editor's.
 func children(st *state, id int32) map[string]any {
 	m := st.m
 	items := []map[string]any{}
 	for _, c := range m.Children(id) {
 		n := &m.Nodes[c]
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"node": c, "name": n.Name, "kind": n.Kind.String(), "lines": n.Lines,
 			"kids": len(n.Children), "color": tile.AreaColor(m, n.Hue),
-		})
+		}
+		if n.Kind == codemap.KindScope {
+			item["line"] = n.StartLine + 1
+			item["scope"] = n.Scope.String()
+			item["complexity"] = n.Complexity
+		}
+		items = append(items, item)
 	}
 	return map[string]any{"op": "children", "node": id, "items": items}
 }

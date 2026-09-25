@@ -12,7 +12,7 @@ signal text_received(block: Dictionary)
 signal font_ready
 
 const TILE_PX := 256
-const PROTOCOL := 16   ## docs/protocol.md; must match the server's hello.protocol
+const PROTOCOL := 17   ## docs/protocol.md; must match the server's hello.protocol
 
 var url := "ws://127.0.0.1:7878/ws"
 var repo := ""        ## folder to index when we launch the server

@@ -104,7 +104,7 @@ Every control has one home ([docs/PLAN.md](docs/PLAN.md), "UI map").
 | Explorer (left) | the file tree, down to functions; follows the selection |
 | Viewport header | breadcrumb (click a segment to select it, › to list what is inside) · Camera menu (framing, back / forward) · ☰ display toggles |
 | Legend (bottom right) | what colors and arcs mean; click an area to frame it |
-| Right pane | **Inspector** (with clickable imports / callers) · **View** (lenses, importance, relations) |
+| Right pane | **Inspector** (what it is, what is inside it as an outline with line numbers, what imports or calls it - every row clickable) · **View** (lenses, importance, relations) |
 | ☰ display menu | what the viewport draws: labels, code text, line numbers, hover, search hits, legend, grid, minimap, folder headers, the **hover card** under the cursor, **focus the selection** (dim everything outside it) and **fill functions** (function bodies as filled blocks — with the code text off, a map of functions rather than files) |
 | Status bar | server, index progress, hover, keymap hints, fps |
 
