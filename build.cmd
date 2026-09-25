@@ -143,6 +143,10 @@ rem  reads as a flag with no value. %* keeps the line as it was typed, so we
 rem  only cut the mode and the file name off the front of it.
 set "ARGS=%*"
 call set "REST=%%ARGS:*%2=%%"
+rem  A cold index needs longer than the driver's own default of four seconds,
+rem  and a screenshot taken too early shows an empty map and reads as a bug.
+echo %REST% | find "--wait" >nul
+if errorlevel 1 set "REST=%REST% --wait=14"
 echo Shooting %OUT% ...
 "%GODOT_C%" --path "%ROOT%\viewer-gd" -- "--url=ws://127.0.0.1:7899/ws" "--repo=%ROOT%" "--scrap=%SCRAP%" "--shot=%OUT%"%REST%
 exit /b %errorlevel%
@@ -152,6 +156,17 @@ rem  A folder anyone can copy and run: the viewer, the server it starts, and
 rem  the config it reads (themes, keymaps, presets, the settings schema).
 rem ---------------------------------------------------------------------------
 :dist
+rem  Templates first, before anything is deleted: they are a one-time ~1 GB
+rem  download and their absence is the usual reason an export fails, so name
+rem  the folder that is missing instead of letting Godot fail four steps on.
+for /f "tokens=1-4 delims=." %%a in ('""%GODOT_C%" --version"') do set "GV=%%a.%%b.%%c.%%d"
+if not exist "%APPDATA%\Godot\export_templates\%GV%\" (
+    echo ERROR: no export templates for Godot %GV%, so the viewer cannot be
+    echo exported. They are expected in:
+    echo    %APPDATA%\Godot\export_templates\%GV%\
+    echo In the editor: Editor - Manage Export Templates - Download and Install.
+    exit /b 1
+)
 call :build_scrap
 if errorlevel 1 exit /b 1
 if exist "%ROOT%\dist" (
@@ -161,14 +176,12 @@ if exist "%ROOT%\dist" (
 mkdir "%ROOT%\dist"
 if not exist "%ROOT%\viewer-gd\export_presets.cfg" call :write_preset
 call :import_once
-echo Exporting the viewer...
+echo Exporting the viewer for Godot %GV% ...
 "%GODOT_C%" --headless --path "%ROOT%\viewer-gd" --export-release "Windows Desktop" "%ROOT%\dist\code-scrap.exe"
 if errorlevel 1 (
-    echo ERROR: the viewer did not export. Read the lines above: usually the
-    echo export templates for this Godot version are not installed yet
-    echo (editor: Editor - Manage Export Templates - Download and Install).
-    echo If the preset itself is at fault, open viewer-gd in the editor and
-    echo fix it under Project - Export.
+    echo ERROR: the viewer did not export. Read the lines above: if the
+    echo preset is at fault, open viewer-gd in the editor and fix it
+    echo under Project - Export.
     exit /b 1
 )
 copy /y "%SCRAP%" "%ROOT%\dist\scrap.exe" >nul

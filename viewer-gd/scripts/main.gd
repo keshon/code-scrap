@@ -80,7 +80,7 @@ var _travelling := false            # inside a back/forward jump: record nothing
 
 
 func _ready() -> void:
-	for a in OS.get_cmdline_user_args():
+	for a in ScrapClient.cmdline_args():
 		if a.begins_with("--") and a.contains("="):
 			args[a.substr(2, a.find("=") - 2)] = a.substr(a.find("=") + 1)
 		elif a.begins_with("--"):

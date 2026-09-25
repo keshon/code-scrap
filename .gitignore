@@ -4,3 +4,4 @@ scrap/bin/
 .godot/
 .scrap/
 viewer-gd/export/
+dist/

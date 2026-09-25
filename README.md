@@ -39,7 +39,7 @@ Requires Go 1.26+ and Godot 4.7. On Windows, `build.cmd` is the one entry point 
 | `build serve [repo] [addr]` | build, then run the server in this console |
 | `build test [pattern]` | `go vet` and `go test` (pattern filters with `-run`) |
 | `build shot out.png [viewer args]` | scripted viewer run on a port of its own: it flies where you tell it, saves a screenshot and quits |
-| `build dist` | package the viewer, the server and `config/` into `dist\` |
+| `build dist` | package the viewer, the server and `config/` into `dist\` (needs the Godot export templates installed once, from the editor) |
 | `build import` \| `clean` \| `stop` | re-import the Godot project, remove build output, stop a leftover server |
 
 Or step by step:
@@ -51,6 +51,8 @@ cd scrap && go build -o bin/scrap.exe ./cmd/scrap
 ```bash
 godot --path viewer-gd -- --repo=D:/path/to/some/repo
 ```
+
+A packaged copy (`dist\`) takes the folder to map as a plain argument - `code-scrap.exe D:\path\to\some\repo`, or a folder dropped on it - and runs the `scrap.exe` that sits beside it.
 
 The viewer starts `scrap serve` itself if nothing is listening on `ws://127.0.0.1:7878/ws`. You can also run the server yourself:
 

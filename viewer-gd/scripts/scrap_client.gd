@@ -43,8 +43,12 @@ func _ready() -> void:
 func _parse_args() -> void:
 	var root := ProjectSettings.globalize_path("res://").trim_suffix("/")
 	repo = root.get_base_dir()  # default: the code-scrap repo itself
-	scrap_exe = root.get_base_dir().path_join("scrap/bin/scrap.exe")
-	for a in OS.get_cmdline_user_args():
+	# a packaged copy carries the server beside it; in the repo it is built
+	# into scrap/bin
+	scrap_exe = OS.get_executable_path().get_base_dir().path_join("scrap.exe")
+	if not FileAccess.file_exists(scrap_exe):
+		scrap_exe = root.get_base_dir().path_join("scrap/bin/scrap.exe")
+	for a in cmdline_args():
 		if a.begins_with("--repo="):
 			repo = a.substr(7)
 			_repo_explicit = true
@@ -52,6 +56,19 @@ func _parse_args() -> void:
 			scrap_exe = a.substr(8)
 		elif a.begins_with("--url="):
 			url = a.substr(6)
+		elif not a.begins_with("-") and DirAccess.dir_exists_absolute(a):
+			repo = a            # code-scrap.exe D:\some\repo
+			_repo_explicit = true
+
+
+## Our own arguments. Run from the editor they arrive after "--"; a packaged
+## copy is started with them directly, and then there is no "--" to look
+## behind, so the whole command line is read instead.
+static func cmdline_args() -> PackedStringArray:
+	var user := OS.get_cmdline_user_args()
+	if not user.is_empty() or OS.has_feature("editor"):
+		return user
+	return OS.get_cmdline_args()
 
 
 func _connect() -> void:
