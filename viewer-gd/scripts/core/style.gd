@@ -234,6 +234,7 @@ const ICONS := {
 	"close": '<path d="M6 6l12 12M18 6L6 18"/>',
 	"reset": '<path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4.5h4.5"/>',
 	"info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6v.1"/>',
+	"external": '<path d="M14 5h5v5"/><path d="M19 5l-7 7"/><path d="M18 14v5H5V6h5"/>',
 	"frame": '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/>',
 }
 

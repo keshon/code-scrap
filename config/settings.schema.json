@@ -46,6 +46,13 @@
           "default": "maya",
           "label": "Mouse & keys",
           "desc": "Navigation and shortcut scheme. Keymaps live in config/keymaps."
+        },
+        {
+          "id": "ui.editor_command",
+          "type": "string",
+          "default": "",
+          "label": "Open in editor",
+          "desc": "The command the Inspector runs to open a file. {file} and {line} are replaced; arguments are split on spaces. Empty means whatever the system opens that file with. For example: code -g {file}:{line}"
         }
       ]
     },

@@ -104,7 +104,7 @@ Every control has one home ([docs/PLAN.md](docs/PLAN.md), "UI map").
 | Explorer (left) | the file tree, down to functions; follows the selection |
 | Viewport header | breadcrumb (click a segment to select it, › to list what is inside) · Camera menu (framing, back / forward) · ☰ display toggles |
 | Legend (bottom right) | what colors and arcs mean; click an area to frame it |
-| Right pane | **Inspector** (what it is, what is inside it as an outline with line numbers, what imports or calls it - every row clickable) · **View** (lenses, importance, relations) |
+| Right pane | **Inspector** (what reaches the selection, the selection, what it reaches for, then its outline - every row a button) · **View** (lenses, importance, relations) |
 | ☰ display menu | what the viewport draws: labels, code text, line numbers, hover, search hits, legend, grid, minimap, folder headers, the **hover card** under the cursor, **focus the selection** (dim everything outside it) and **fill functions** (function bodies as filled blocks — with the code text off, a map of functions rather than files) |
 | Status bar | server, index progress, hover, keymap hints, fps |
 
@@ -133,6 +133,8 @@ Every lens is optional; the defaults show the plain map.
 | **importance** | shrink vendored, test, generated, asset and data files so the core code gets the space |
 | **imports** | arcs from the selection to what it imports (orange) and from what imports it (blue); an arc leaves the import statement and lands on the declaration it names (JS/TS, through barrels), and both lines light up while they are readable on screen |
 | **calls** | arcs to what the selected function/file calls (violet) and from its callers (green); an arc leaves the call and lands on the callee's first line; syntax-level, ambiguous names skipped |
+
+The Inspector reads as a route map, top to bottom: what imports or calls the selection, then the selection itself, then what it imports or calls. Every row carries the address it lands on (`analyze  build.go:327`), clicking a row goes there, and its icon opens the file in an editor - whatever the system opens it with, or the command in **Settings, Open in editor** (`code -g {file}:{line}`, `goland64 --line {line} {file}`). Under the routes is the outline: a file's functions in reading order with the line each starts on, a folder's contents with their size.
 
 Every arrowhead points at what is used, so the color only says which side of the relation the selection is on. By default two colors carry that (what the selection uses, what uses it) and imports are dashed while calls are solid; **View → Arc colors** switches to a color per kind and direction instead. Arcs are on when Show imports / Show calls are on — there is no separate master switch. Hovering an arc reads it out as a sentence ("build.go:312 imports Hub · hub.ts:14"); clicking one travels to its far end, and clicking it again comes back.
 

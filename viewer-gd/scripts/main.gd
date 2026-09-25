@@ -211,6 +211,7 @@ func _build_ui() -> void:
 	inspector = Inspector.new()
 	_tabs.add_child(inspector)
 	inspector.node_clicked.connect(func(id): select_and_frame(id, true))
+	inspector.open_requested.connect(_open_in_editor)
 	view_panel = ViewPanel.new()
 	_tabs.add_child(view_panel)
 	view_panel.lens_changed.connect(func(v):
@@ -415,6 +416,26 @@ static func _same_place(a: Dictionary, b: Dictionary) -> bool:
 		if absf(float(ca[k]) - float(cb.get(k, 0.0))) > 1e-4:
 			return false
 	return true
+
+
+## Opens a file from the Inspector in an editor: the command from settings,
+## or, when there is none, whatever the system opens that file with.
+func _open_in_editor(path: String, line: int) -> void:
+	var root := String(hello_info.get("root", ""))
+	var full := path if root == "" else root.path_join(path)
+	var cmd := String(Settings.get_value("ui.editor_command")).strip_edges()
+	if cmd == "":
+		OS.shell_open(full)
+		status.set_status("Opened " + path.get_file())
+		return
+	var parts := cmd.split(" ", false)
+	var args := PackedStringArray()
+	for i in range(1, parts.size()):
+		args.append(parts[i].replace("{file}", full).replace("{line}", str(maxi(line, 1))))
+	if OS.create_process(parts[0], args) < 0:
+		status.set_status("Could not run: " + cmd)
+	else:
+		status.set_status("Opened %s:%d" % [path.get_file(), maxi(line, 1)])
 
 
 ## Selects a node by id in the active view (and mirrors it into the other),
