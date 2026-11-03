@@ -1,6 +1,6 @@
 # scrap wire protocol
 
-Version **15** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
+Version **17** (`hello.protocol`). The `scrap serve` process and the viewers talk over one WebSocket (`ws://127.0.0.1:7878/ws` by default).
 
 - **Text frames** carry JSON control messages.
 - **Binary frames** carry geometry, text textures and the font atlas.
